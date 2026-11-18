@@ -1,0 +1,578 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ------------------------------------------------------------------ */
+/*  Design tokens — "paper & ink" academic palette                     */
+/* ------------------------------------------------------------------ */
+:root {
+  --sb-bg: #f5f3ee;
+  --sb-surface: #fffdf8;
+  --sb-surface-2: #ece9e1;
+  --sb-surface-3: #e3dfd4;
+  --sb-line: #e0dbd0;
+  --sb-line-strong: #cdc7b9;
+  --sb-ink: #24211c;
+  --sb-ink-2: #5f594f;
+  --sb-ink-3: #8d877c;
+  --sb-accent: #2b6a62;
+  --sb-accent-ink: #ffffff;
+  --sb-accent-soft: #dfece9;
+  --sb-warn: #a8701f;
+  --sb-danger: #a83b32;
+  --sb-shadow: 0 1px 2px rgb(36 33 28 / 0.06), 0 8px 24px -12px rgb(36 33 28 / 0.18);
+  --sb-canvas: #e9e6df;
+}
+
+.dark {
+  --sb-bg: #131311;
+  --sb-surface: #1a1a17;
+  --sb-surface-2: #23231f;
+  --sb-surface-3: #2b2a25;
+  --sb-line: #2e2d27;
+  --sb-line-strong: #3d3b34;
+  --sb-ink: #e9e5db;
+  --sb-ink-2: #a9a49a;
+  --sb-ink-3: #7c776d;
+  --sb-accent: #6db6a6;
+  --sb-accent-ink: #0d1a17;
+  --sb-accent-soft: #1e332f;
+  --sb-warn: #d8a24a;
+  --sb-danger: #e0786c;
+  --sb-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -16px rgb(0 0 0 / 0.7);
+  --sb-canvas: #0e0e0c;
+}
+
+@theme inline {
+  --color-bg: var(--sb-bg);
+  --color-surface: var(--sb-surface);
+  --color-surface-2: var(--sb-surface-2);
+  --color-surface-3: var(--sb-surface-3);
+  --color-line: var(--sb-line);
+  --color-line-strong: var(--sb-line-strong);
+  --color-ink: var(--sb-ink);
+  --color-ink-2: var(--sb-ink-2);
+  --color-ink-3: var(--sb-ink-3);
+  --color-accent: var(--sb-accent);
+  --color-accent-ink: var(--sb-accent-ink);
+  --color-accent-soft: var(--sb-accent-soft);
+  --color-warn: var(--sb-warn);
+  --color-danger: var(--sb-danger);
+  --color-canvas: var(--sb-canvas);
+
+  --font-sans: 'Inter var', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC',
+    'Microsoft YaHei', system-ui, sans-serif;
+  --font-serif: 'Iowan Old Style', 'Charter', 'Palatino Linotype', 'Source Han Serif SC',
+    'Noto Serif SC', 'Songti SC', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', 'Cascadia Code', Consolas, monospace;
+
+  --radius-panel: 0.75rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--sb-line);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--sb-bg);
+    color: var(--sb-ink);
+    font-family: var(--font-sans);
+    font-size: 13.5px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--sb-accent) 26%, transparent);
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  input,
+  textarea {
+    outline: none;
+  }
+
+  /* thin, unobtrusive scrollbars everywhere */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--sb-ink-3) 32%, transparent);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--sb-ink-3) 55%, transparent);
+    background-clip: content-box;
+    border: 3px solid transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--sb-accent) 70%, transparent);
+    outline-offset: 1px;
+  }
+}
+
+@layer components {
+  .sb-panel {
+    background: var(--sb-surface);
+    border-color: var(--sb-line);
+  }
+
+  .sb-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    height: 1.875rem;
+    padding-inline: 0.625rem;
+    border-radius: 0.5rem;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--sb-ink-2);
+    transition: background-color 120ms ease, color 120ms ease;
+    white-space: nowrap;
+  }
+  .sb-btn:hover {
+    background: var(--sb-surface-2);
+    color: var(--sb-ink);
+  }
+  .sb-btn[data-active='true'] {
+    background: var(--sb-accent-soft);
+    color: var(--sb-accent);
+  }
+  .sb-btn:disabled {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+
+  .sb-btn-primary {
+    background: var(--sb-accent);
+    color: var(--sb-accent-ink);
+  }
+  .sb-btn-primary:hover {
+    background: color-mix(in oklab, var(--sb-accent) 88%, black);
+    color: var(--sb-accent-ink);
+  }
+
+  .sb-input {
+    height: 1.875rem;
+    width: 100%;
+    border-radius: 0.5rem;
+    border: 1px solid var(--sb-line);
+    background: var(--sb-surface);
+    padding-inline: 0.625rem;
+    font-size: 12.5px;
+    color: var(--sb-ink);
+  }
+  .sb-input::placeholder {
+    color: var(--sb-ink-3);
+  }
+  .sb-input:focus {
+    border-color: color-mix(in oklab, var(--sb-accent) 60%, var(--sb-line));
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--sb-accent) 12%, transparent);
+  }
+
+  .sb-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 999px;
+    border: 1px solid var(--sb-line);
+    padding: 0.0625rem 0.5rem;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--sb-ink-2);
+    background: var(--sb-surface);
+    white-space: nowrap;
+  }
+
+  .sb-scroll {
+    scrollbar-gutter: stable;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  PDF text layer — selection-ready, copied from PDF.js viewer styles  */
+/* ------------------------------------------------------------------ */
+/* The essential subset of pdfjs-dist/web/pdf_viewer.css — copied rather than
+   imported so we don't ship the viewer's 170 KB of annotation-editor styles.
+   pdf.js sets --font-height / --scale-x / --rotate / --min-font-size per span. */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  color-scheme: only light;
+
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.textLayer span,
+.textLayer br {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+.textLayer ::selection {
+  background: color-mix(in oklab, var(--sb-accent) 34%, transparent);
+}
+
+/* highlight/underline annotations are painted by us, under the text layer */
+.pdf-annotation-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.pdf-mark {
+  position: absolute;
+  border-radius: 1px;
+}
+
+/* 高亮：纯 rgba 背景。以前用 multiply + opacity，
+   跨行选择时同一行会拿到「字形盒 + 行盒」两个 rect，重叠处二次合成 → 中间行更重。
+   现在 rect 在渲染前已按行归一，层内也不再做混合。 */
+.pdf-highlight-layer {
+  isolation: isolate;
+}
+.pdf-mark-highlight {
+  pointer-events: none;
+  border-radius: 2px;
+}
+
+/* 线条层：下划线与删除线分开实现 —— 下划线贴底，删除线走中线。 */
+.pdf-line-layer {
+  isolation: isolate;
+}
+.pdf-mark-underline,
+.pdf-mark-strikethrough {
+  pointer-events: none;
+  border-radius: 1px;
+}
+
+/* 框选：图形/空白区域的矩形批注，可以点开 */
+.pdf-mark-rect {
+  pointer-events: auto;
+  cursor: pointer;
+  border: 1.5px solid var(--sb-warn);
+  border-radius: 2px;
+  transition: box-shadow 120ms ease;
+}
+
+.pdf-mark-rect:hover {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--sb-warn) 35%, transparent);
+}
+
+.pdf-mark-active {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--sb-accent) 55%, transparent);
+}
+
+/* 所见即所得编辑器（contenteditable 版 markdown 预览） */
+.md-live {
+  caret-color: var(--sb-accent);
+  outline: none;
+}
+.md-live:empty::before,
+.md-live[data-empty='true']::before {
+  content: attr(data-placeholder);
+  white-space: pre-wrap;
+  color: color-mix(in oklab, var(--sb-ink-3) 70%, transparent);
+  pointer-events: none;
+}
+.md-live img {
+  display: block;
+  max-width: 100%;
+  margin: 0.55em 0;
+  cursor: default;
+}
+.md-live img:hover {
+  outline: 2px solid color-mix(in oklab, var(--sb-accent) 45%, transparent);
+  outline-offset: 2px;
+}
+.md-live ::selection {
+  background: color-mix(in oklab, var(--sb-accent) 22%, transparent);
+}
+.md-body img[data-missing] {
+  min-height: 3em;
+  min-width: 8em;
+  background: var(--sb-surface-2);
+  border-style: dashed;
+  opacity: 0.6;
+}
+
+/* markdown preview */
+.md-body {
+  font-family: var(--font-serif);
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: var(--sb-ink);
+  word-break: break-word;
+}
+.md-body > * + * {
+  margin-top: 0.75em;
+}
+.md-body h1 {
+  font-size: 1.55em;
+  font-weight: 650;
+  line-height: 1.25;
+  margin-top: 0.4em;
+}
+.md-body h2 {
+  font-size: 1.25em;
+  font-weight: 650;
+  margin-top: 1.2em;
+}
+.md-body h3 {
+  font-size: 1.08em;
+  font-weight: 650;
+  margin-top: 1em;
+}
+.md-body p {
+  margin: 0;
+}
+.md-body a {
+  color: var(--sb-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md-body ul,
+.md-body ol {
+  padding-left: 1.25em;
+}
+.md-body ul {
+  list-style: disc;
+}
+.md-body ol {
+  list-style: decimal;
+}
+.md-body li {
+  margin: 0.15em 0;
+}
+/* 嵌套列表：层级用圆圈/方块区分，子列表紧跟父项不留大缝 */
+.md-body ul ul {
+  list-style: circle;
+}
+.md-body ul ul ul {
+  list-style: square;
+}
+.md-body li > ul,
+.md-body li > ol {
+  margin: 0.15em 0;
+}
+.md-body code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--sb-surface-2);
+  padding: 0.1em 0.32em;
+  border-radius: 0.3em;
+}
+.md-body pre {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background: var(--sb-surface-2);
+  border: 1px solid var(--sb-line);
+  border-radius: 0.5rem;
+  padding: 0.7em 0.85em;
+  overflow-x: auto;
+}
+.md-body pre code {
+  background: none;
+  padding: 0;
+}
+.md-body blockquote {
+  border-left: 2px solid var(--sb-accent);
+  padding-left: 0.85em;
+  color: var(--sb-ink-2);
+  font-style: italic;
+}
+.md-body img {
+  max-width: 100%;
+  border-radius: 0.4rem;
+  border: 1px solid var(--sb-line);
+}
+.md-body hr {
+  border: none;
+  border-top: 1px solid var(--sb-line);
+  margin: 1.4em 0;
+}
+.md-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+  font-family: var(--font-sans);
+}
+.md-body th,
+.md-body td {
+  border: 1px solid var(--sb-line);
+  padding: 0.35em 0.6em;
+  text-align: left;
+}
+.md-body th {
+  background: var(--sb-surface-2);
+  font-weight: 600;
+}
+.md-body mark {
+  background: color-mix(in oklab, #f2d16b 45%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 0.1em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── CodeMirror 编辑器外壳（主题在 MarkdownEditor 里用 EditorView.theme 定义） ── */
+.cm-host .cm-editor {
+  height: 100%;
+  color: var(--color-ink);
+}
+.cm-host .cm-scroller {
+  overflow: auto;
+  padding: 0 6px 32px;
+}
+.cm-host .cm-content {
+  /* 以前这里钉死 max-width: 76ch（约 620px），容器再宽正文也只有一条窄栏挤在左边 ——
+     单独打开笔记时右边一大片空白就是这么来的。宽度交给「设置 → 版心宽度」控制。 */
+  max-width: 100%;
+  min-height: 100%;
+}
+.cm-host .cm-placeholder {
+  color: var(--color-ink-3);
+}
+.cm-task {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95em;
+  height: 0.95em;
+  margin-right: 0.1em;
+  border: 1.2px solid var(--color-ink-3);
+  border-radius: 3px;
+  font-size: 0.78em;
+  line-height: 1;
+  vertical-align: -0.08em;
+  color: #fff;
+}
+.cm-task-done {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+/* 实时预览里的图片：`![alt](assets/x.png)` 整行换成真图 */
+.cm-md-image {
+  display: block;
+  padding: 2px 0 4px;
+}
+.cm-md-image img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface-2);
+}
+
+/* 实时预览里的公式：$...$ 行内、$$...$$ 块级（KaTeX） */
+.cm-md-math {
+  display: block;
+  padding: 2px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.cm-md-math-inline {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
+}
+
+/* 实时预览里的代码围栏 / 单行 HTML：复用 md-body 的 pre/code/元素样式 */
+.cm-md-block {
+  padding: 2px 0;
+}
+.cm-md-block pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* BlockWidget 挂了 md-body 类，但 md-body 钉死 14.5px 衬线体（那是阅读模式的默认值）——
+   在编辑器里必须跟随编辑器字号，否则代码块 / HTML 嵌入的内容比正文小一号。
+   pre 和 code 还各自带 0.82em / 0.86em 的缩放，嵌套起来是双重缩小，一并归一。 */
+.cm-host .cm-md-block.md-body {
+  font-size: 1em;
+  font-family: inherit;
+}
+.cm-host .cm-md-block pre,
+.cm-host .cm-md-block code {
+  font-size: 1em;
+}
+
+/* 缩进参考线：只在当前行画（以前整篇都铺一层竖虚线，正文看着很脏） */
+.cm-guides .cm-activeLine {
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in oklab, var(--color-line) 70%, transparent) 0 1px,
+    transparent 1px 2ch
+  );
+  background-position: 0 0;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}

@@ -1,0 +1,45 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build
+dist/
+dist-ssr/
+*.local
+
+# rust / tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# local vault fixture (created by dev scripts / real usage)
+/MyVault/
+
+# local npm cache + visual-QA scratch (see scripts/shot.mjs)
+.npm-cache/
+.shots/
+
+# 本地临时目录（cargo 的 TEMP/TMP、测试用 vault、桌面端调试输出）
+.tmp/
+
+# 本机 Rust 工具链（装在项目目录里，因为用户目录被沙箱限制）
+.cargo/
+.rustup/
+rustup-init.exe

@@ -1,0 +1,59 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "ScholarBox 主窗口权限：文件、对话框、网络、设置存储",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:path:default",
+    "core:event:default",
+
+    "dialog:default",
+
+    "store:default",
+
+    "fs:default",
+    "fs:allow-exists",
+    "fs:allow-stat",
+    "fs:allow-read-dir",
+    "fs:allow-mkdir",
+    "fs:allow-remove",
+    "fs:allow-rename",
+    "fs:allow-read-text-file",
+    "fs:allow-read-file",
+    "fs:allow-write-text-file",
+    "fs:allow-write-file",
+    "fs:allow-copy-file",
+
+    "fs:allow-appconfig-read",
+    "fs:allow-appconfig-read-recursive",
+    "fs:allow-appconfig-write",
+    "fs:allow-appconfig-write-recursive",
+
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APPCONFIG/**" },
+        { "path": "$APPDATA/**" },
+        { "path": "$HOME/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$DOWNLOAD/**" }
+      ]
+    },
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://api.github.com/**" },
+        { "url": "https://github.com/**" },
+        { "url": "https://raw.githubusercontent.com/**" },
+        { "url": "https://objects.githubusercontent.com/**" },
+        { "url": "https://api.mymemory.translated.net/*" },
+        { "url": "https://translate.googleapis.com/*" },
+        { "url": "https://api-free.deepl.com/*" },
+        { "url": "https://api.deepl.com/*" },
+        { "url": "https://api.openai.com/*" }
+      ]
+    }
+  ]
+}

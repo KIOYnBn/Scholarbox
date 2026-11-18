@@ -1,0 +1,63 @@
+[package]
+name = "scholarbox"
+version = "0.1.0"
+description = "本地优先的跨平台文献阅读器"
+authors = ["ScholarBox"]
+edition = "2021"
+rust-version = "1.77.2"
+
+# `tauri android init` / `tauri ios init` look for this section.
+[lib]
+name = "scholarbox_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# git 用的自建 HTTP 通道：强制 IPv4（本机到 github.com 的 IPv6 路径不通）
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "gzip"] }
+base64 = "0.22"
+# `protocol-asset` powers `convertFileSrc()` — the reader loads PDFs straight
+# from the vault instead of copying bytes through IPC.
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+# 默认特性里的 `cookies` 会在启动时把 `.cookies` 写进系统缓存目录
+# （Windows 上是 SHGetKnownFolderPath 取的真实 LocalAppData，改环境变量绕不过去）。
+# 我们用不到 cookie —— isomorphic-git 走 Authorization 头 —— 所以关掉它，
+# 顺带省掉一个平台相关文件写入。
+tauri-plugin-http = { version = "2", default-features = false, features = [
+  "rustls-tls-webpki-roots",
+  "charset",
+] }
+tauri-plugin-store = "2"
+# 删除仓库文件夹时优先走系统回收站（Windows 回收站 / macOS 废纸篓）
+trash = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 只用来在 WebView2 起不来时弹一个原生 MessageBox —— 那条路径上不能依赖
+# WebView2 自己（它正是坏掉的东西）。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = [
+  "Win32_Foundation",
+  "Win32_UI_WindowsAndMessaging",
+] }
+# 读 Windows 系统代理（WinINET 注册表）。lockfile 里已有 0.56（tauri 传递依赖），
+# 这里显式声明即可复用同一份，不引入新的网络下载。
+winreg = "0.56"
+
+[features]
+# Enabled by `tauri build --debug`; keeps devtools and disables the bundled
+# asset compression.
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+# fat LTO（`lto = true` + `codegen-units = 1`）在这台机器上跑了一个半小时还没出 exe，
+# 对开发和出包都太贵。thin LTO 的产物体积/性能差距在 1-2%，编译时间差一个量级。
+codegen-units = 16
+lto = "thin"
+opt-level = "s"
+panic = "abort"
+strip = true
