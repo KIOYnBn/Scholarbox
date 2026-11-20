@@ -20,10 +20,18 @@ interface UiState {
   mainView: MainView
   homeMode: HomeMode
   sidebarTab: SidebarTab
-  /** 全屏笔记当前打开的目标 */
+  /** 全屏笔记当前打开的目标（左栏；单栏时就是全部） */
   noteTarget: NoteTarget | null
+  /** 双栏对照时的右栏笔记；null = 单栏 */
+  noteTargetB: NoteTarget | null
+  /** 笔记选择弹窗：正在为哪一栏挑选（null = 关闭） */
+  notePickerFor: 'A' | 'B' | null
   /** 从书库「独立打开」时记住来处，返回时回到原页面 */
   noteReturnView: MainView
+  /** 书架缩放（书脊卡片的比例，1 = 默认），文献书架与笔记书架共用 */
+  shelfZoom: number
+  /** 置顶的书架分组 key（分架维度名 + 组名），置顶的层排在最上面 */
+  pinnedShelves: string[]
   shelfDimension: ShelfDimension
   /** 笔记库自己的视图状态（与文献库互不影响） */
   notesFilter: ItemFilter
@@ -50,6 +58,16 @@ interface UiState {
   setSidebarTab: (tab: SidebarTab) => void
   openNote: (target: NoteTarget) => void
   closeNote: () => void
+  /** 在右栏打开一篇笔记（双栏对照） */
+  openNoteB: (target: NoteTarget) => void
+  /** 关掉右栏，回到单栏 */
+  closeNoteB: () => void
+  /** 打开笔记选择弹窗，为指定栏挑一篇 */
+  openNotePicker: (pane: 'A' | 'B') => void
+  closeNotePicker: () => void
+  setShelfZoom: (zoom: number) => void
+  /** 置顶 / 取消置顶某个书架分组（置顶的层始终排在最上面） */
+  toggleShelfPin: (key: string) => void
   setHomeMode: (mode: HomeMode) => void
   setShelfDimension: (dimension: ShelfDimension) => void
   setNotesFilter: (patch: Partial<ItemFilter>) => void
@@ -73,12 +91,20 @@ interface UiState {
   focusFilter: () => void
 }
 
+export const SHELF_ZOOM_MIN = 0.7
+export const SHELF_ZOOM_MAX = 1.6
+export const SHELF_ZOOM_STEP = 0.1
+
 export const useUiStore = create<UiState>((set, get) => ({
   mainView: 'home',
   homeMode: 'shelf',
   sidebarTab: 'library',
   noteTarget: null,
+  noteTargetB: null,
+  notePickerFor: null,
   noteReturnView: 'home',
+  shelfZoom: 1,
+  pinnedShelves: [],
   shelfDimension: 'field',
   notesFilter: { ...EMPTY_ITEM_FILTER },
   notesSort: 'updated',
@@ -103,8 +129,22 @@ export const useUiStore = create<UiState>((set, get) => ({
       noteTarget: target,
       noteReturnView: state.mainView === 'note' ? state.noteReturnView : state.mainView,
       mainView: 'note',
+      notePickerFor: null,
     })),
-  closeNote: () => set((state) => ({ mainView: state.noteReturnView, noteTarget: null })),
+  closeNote: () =>
+    set((state) => ({ mainView: state.noteReturnView, noteTarget: null, noteTargetB: null })),
+  openNoteB: (target) => set({ noteTargetB: target, notePickerFor: null }),
+  closeNoteB: () => set({ noteTargetB: null }),
+  openNotePicker: (pane) => set({ notePickerFor: pane }),
+  closeNotePicker: () => set({ notePickerFor: null }),
+  setShelfZoom: (zoom) =>
+    set({ shelfZoom: Math.min(SHELF_ZOOM_MAX, Math.max(SHELF_ZOOM_MIN, Math.round(zoom * 100) / 100)) }),
+  toggleShelfPin: (key) =>
+    set((state) => ({
+      pinnedShelves: state.pinnedShelves.includes(key)
+        ? state.pinnedShelves.filter((item) => item !== key)
+        : [...state.pinnedShelves, key],
+    })),
   setHomeMode: (mode) => set({ homeMode: mode }),
   setShelfDimension: (dimension) => set({ shelfDimension: dimension }),
   setNotesFilter: (patch) => set((state) => ({ notesFilter: { ...state.notesFilter, ...patch } })),

@@ -17,6 +17,8 @@ interface SpineCardProps {
   item: LibraryItem
   tone: ShelfTone
   selected: boolean
+  /** 书架缩放比例（1 = 默认书脊大小） */
+  zoom?: number
   onOpen: (item: LibraryItem) => void
   onHover: (item: LibraryItem | null, rect: DOMRect | null) => void
   onContextMenu: (item: LibraryItem, at: { x: number; y: number }) => void
@@ -34,9 +36,10 @@ interface SpineCardProps {
  * 文献与笔记的差别只在「标题下面放什么」：文献放第一作者和年份，
  * 笔记放标签和更新日期 —— 两种内容用同一个骨架。
  */
-export function SpineCard({ item, tone, selected, onOpen, onHover, onContextMenu, onTogglePin }: SpineCardProps) {
+export function SpineCard({ item, tone, selected, zoom = 1, onOpen, onHover, onContextMenu, onTogglePin }: SpineCardProps) {
   const style = toneStyle(tone)
-  const width = spineWidth(item.importance)
+  const width = Math.round(spineWidth(item.importance) * zoom)
+  const height = Math.round(SPINE_HEIGHT * zoom)
   const progress = Math.min(100, Math.max(0, item.progress))
   const ref = useRef<HTMLButtonElement>(null)
   const [raised, setRaised] = useState(false)
@@ -78,7 +81,7 @@ export function SpineCard({ item, tone, selected, onOpen, onHover, onContextMenu
       )}
       style={{
         width,
-        height: SPINE_HEIGHT,
+        height,
         background: spineGradient(style),
       }}
     >

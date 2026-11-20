@@ -18,6 +18,7 @@ import {
   remoteUrl,
   repoUrl,
   initRepo,
+  revertToCommit,
   switchBranch,
 } from '@/lib/git/repo'
 import { classifyGitError, GitOperationError } from '@/lib/git/errors'
@@ -133,6 +134,38 @@ describe('git 仓库操作（内存文件系统）', () => {
     await initRepo(vault, { url: repoUrl('me', 'MyVault'), branch: 'main', token: 'x' })
     expect(await commitAll(vault, 'init', author)).not.toBeNull()
     expect(await commitAll(vault, 'again', author)).toBeNull()
+  })
+
+  it('revertToCommit：回退到旧提交生成新提交，历史完整', async () => {
+    await initRepo(vault, { url: repoUrl('me', 'MyVault'), branch: 'main', token: 'x' })
+    await vault.writeText('papers/keep.md', '# v1')
+    const first = await commitAll(vault, 'first', author)
+    expect(first).not.toBeNull()
+
+    await vault.writeText('papers/keep.md', '# v2 改过')
+    await vault.writeText('papers/added.md', '新增的文件')
+    const second = await commitAll(vault, 'second', author)
+    expect(second).not.toBeNull()
+
+    const result = await revertToCommit(vault, first!.oid, `回退到 ${first!.oid.slice(0, 7)}`, author)
+    expect(result.oid).toBeTruthy()
+    // 工作区回到 first 时的状态：改动被还原、新文件被删掉
+    expect(await vault.readText('papers/keep.md')).toBe('# v1')
+    expect(await vault.exists('papers/added.md')).toBe(false)
+    // 历史完整：first、second、回退提交都在
+    const entries = await log(vault, 10)
+    expect(entries.length).toBe(3)
+    expect(entries[0]!.message).toContain('回退到')
+    // 回退之后没有未提交改动
+    const summary = await changeSummary(vault)
+    expect(summary.added + summary.modified + summary.deleted).toBe(0)
+  })
+
+  it('revertToCommit：回退到最新提交会报「已经在这个版本上」', async () => {
+    await initRepo(vault, { url: repoUrl('me', 'MyVault'), branch: 'main', token: 'x' })
+    await commitAll(vault, 'only', author)
+    const entries = await log(vault, 5)
+    await expect(revertToCommit(vault, entries[0]!.oid, 'noop', author)).rejects.toThrow('已经在这个版本上')
   })
 
   it('提交历史按时间倒序，带作者与短 hash', async () => {

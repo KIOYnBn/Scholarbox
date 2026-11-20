@@ -9,7 +9,7 @@
  * 和 Obsidian 差得远。列表的 `- ` / `1. ` 也改成保留缩进、由渲染层换成圆点/序号。
  */
 
-export type BlockKind = 'heading' | 'quote' | 'list' | 'task' | 'code' | 'table' | 'plain'
+export type BlockKind = 'heading' | 'quote' | 'list' | 'task' | 'code' | 'table' | 'hr' | 'plain'
 
 export interface InlineSpan {
   from: number
@@ -50,12 +50,16 @@ const TASK = /^(\s*)([-*+])\s+\[( |x|X)\]\s/
 const LIST = /^(\s*)([-*+]|\d+[.)])\s/
 const FENCE = /^\s*(```|~~~)/
 const TABLE_ROW = /^\s*\|.*\|\s*$/
+/** 分割线（Obsidian 的 `---`）：`---`、`***`、`___`，允许最多 3 个前导空格 */
+const HR = /^ {0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/
 
 /** 逐行扫描；`text` 是整篇文档（含换行）。 */
 export function scanMarkdown(text: string): LineInfo[] {
   const lines: LineInfo[] = []
   let cursor = 0
   let inFence = false
+  // frontmatter（开头连续的 `---` 包住的区域）不是分割线，原样保留
+  let inFrontmatter = false
 
   for (const raw of text.split('\n')) {
     const from = cursor
@@ -79,6 +83,15 @@ export function scanMarkdown(text: string): LineInfo[] {
     let list: ListMarker | undefined
     let indent = 0
     let bodyStart = from
+
+    if (lines.length === 0 && raw.trim() === '---') {
+      // 文档第一行的 `---` 是 frontmatter 开头，不是分割线
+      inFrontmatter = true
+    } else if (inFrontmatter && raw.trim() === '---') {
+      inFrontmatter = false
+    } else if (HR.test(raw) && !inFrontmatter) {
+      block = 'hr'
+    }
 
     const heading = HEADING.exec(raw)
     if (heading) {

@@ -810,12 +810,15 @@ function PdfPageView({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const textRef = useRef<HTMLDivElement>(null)
   const [rendered, setRendered] = useState(false)
+  const [renderFailed, setRenderFailed] = useState(false)
+  const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     let page: PDFPageProxy | null = null
     let task: { cancel: () => void; promise: Promise<void> } | null = null
     setRendered(false)
+    setRenderFailed(false)
 
     void (async () => {
       try {
@@ -826,7 +829,15 @@ function PdfPageView({
         if (!canvas || !textContainer) return
 
         const viewport = page.getViewport({ scale })
-        const dpr = Math.min(window.devicePixelRatio || 1, 2)
+        // 画布上限保护：海报 / 大版面页在高缩放 + 高分屏下会超出 Chromium 的
+        // 画布尺寸上限（16384px / 总面积 ~2^24），超出时渲染直接报错、整页空白。
+        // 策略是把 dpr 压到刚好不超限，宁可糊一点也不给用户一张白纸。
+        const MAX_DIM = 16384
+        const MAX_AREA = 2 ** 24
+        let dpr = Math.min(window.devicePixelRatio || 1, 2)
+        const px = viewport.width * viewport.height
+        const dimLimit = Math.min(MAX_DIM / Math.max(viewport.width, 1), MAX_AREA / Math.max(px, 1))
+        dpr = Math.max(1, Math.min(dpr, dimLimit))
 
         canvas.width = Math.floor(viewport.width * dpr)
         canvas.height = Math.floor(viewport.height * dpr)
@@ -864,6 +875,7 @@ function PdfPageView({
         const name = (err as { name?: string })?.name
         if (name !== 'RenderingCancelledException' && !cancelled) {
           console.warn('[pdf] page render failed', pageNumber, err)
+          setRenderFailed(true)
         }
       }
     })()
@@ -877,7 +889,7 @@ function PdfPageView({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc, pageNumber, scale])
+  }, [doc, pageNumber, scale, retryToken])
 
   return (
     <div
@@ -899,7 +911,20 @@ function PdfPageView({
           onCreateRect={onCreateRect}
         />
         <div ref={textRef} className="textLayer" />
-        {!rendered && <div className="absolute inset-0 animate-pulse bg-white/70" />}
+        {!rendered && !renderFailed && <div className="absolute inset-0 animate-pulse bg-white/70" />}
+        {renderFailed && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-surface-2">
+            <FileWarning className="size-5 text-ink-3" />
+            <p className="text-[12px] text-ink-2">第 {pageNumber} 页渲染失败</p>
+            <button
+              type="button"
+              onClick={() => setRetryToken((n) => n + 1)}
+              className="rounded-md border border-line bg-surface px-2.5 py-1 text-[11.5px] text-ink-2 transition hover:border-accent/60 hover:text-accent"
+            >
+              重试
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

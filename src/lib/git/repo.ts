@@ -302,6 +302,74 @@ export async function commitAll(
   return { oid, files: changes }
 }
 
+/**
+ * 把整个仓库回退到某条提交时的状态。
+ *
+ * 实现：对比 HEAD 树与目标树，把差异写进工作区（目标里没有的文件删掉、
+ * 内容不同的覆盖），再生成一个普通提交。历史完整保留，直接 push 即可，
+ * 不需要 force —— 这是「撤销到某个版本」而不是「重写历史」。
+ */
+export async function revertToCommit(
+  vault: VaultFS,
+  oid: string,
+  message: string,
+  author: GitIdentity,
+): Promise<CommitResult> {
+  const fs = fsOf(vault)
+  if (!(await isRepo(vault))) throw new GitError('这个文献库还没有初始化 Git', '先在同步设置里点「连接仓库」')
+
+  // readCommit 只认 oid 不认引用，HEAD 要先 resolveRef 换成 oid
+  const headOid = await git.resolveRef({ fs, dir: '', ref: 'HEAD' }).catch(() => null)
+  const targetCommit = await git.readCommit({ fs, dir: '', oid }).catch(() => null)
+  if (!headOid || !targetCommit) {
+    throw new GitError('读取提交失败', '这条提交可能已被清理；先「推送」一次再试')
+  }
+  if (headOid === oid) {
+    throw new GitError('当前已经在这个版本上', '它就是最新一条提交，不用回退')
+  }
+
+  // 走 git.walk 对比两棵树，只对 blob 动手；目录随文件增删自然增减
+  type Op = { filepath: string; kind: 'write' | 'delete'; blobOid?: string }
+  const ops = await git.walk({
+    fs,
+    dir: '',
+    trees: [git.TREE({ ref: 'HEAD' }), git.TREE({ ref: oid })],
+    map: async (filepath, [headEntry, targetEntry]) => {
+      if (!filepath || filepath === '.') return undefined
+      const headType = headEntry ? await headEntry.type() : null
+      const targetType = targetEntry ? await targetEntry.type() : null
+      if (headType === 'blob' && targetType !== 'blob') {
+        return { filepath, kind: 'delete' } as Op
+      }
+      if (targetType === 'blob' && targetEntry) {
+        const targetOid = await targetEntry.oid()
+        const headOid = headEntry ? await headEntry.oid() : null
+        if (headOid !== targetOid) {
+          return { filepath, kind: 'write', blobOid: targetOid } as Op
+        }
+      }
+      return undefined
+    },
+  })
+
+  for (const op of ops) {
+    if (op.kind === 'delete') {
+      await vault.remove(op.filepath).catch(() => undefined)
+      await git.remove({ fs, dir: '', filepath: op.filepath }).catch(() => undefined)
+    } else if (op.blobOid) {
+      const blob = await git.readBlob({ fs, dir: '', oid: op.blobOid })
+      await vault.writeBytes(op.filepath, new Uint8Array(blob.blob))
+      await git.add({ fs, dir: '', filepath: op.filepath })
+    }
+  }
+
+  const result = await commitAll(vault, message, author)
+  if (!result) {
+    throw new GitError('没有需要回退的改动', '工作区已经和这条提交一致')
+  }
+  return result
+}
+
 export async function currentBranch(vault: VaultFS): Promise<string | null> {
   const fs = fsOf(vault)
   if (!(await isRepo(vault))) return null

@@ -529,6 +529,27 @@
   background: var(--color-surface-2);
 }
 
+/* 实时预览里的 wiki 链接：[[...]] 藏掉括号显示成可点链接（Obsidian 样式） */
+.cm-md-wikilink {
+  color: var(--sb-accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--sb-accent) 40%, transparent);
+  cursor: pointer;
+}
+.cm-md-wikilink:hover {
+  background: color-mix(in oklab, var(--sb-accent) 10%, transparent);
+  border-radius: 3px;
+}
+
+/* 实时预览里的分割线：`---` 整行换成 hr */
+.cm-md-hr {
+  display: block;
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--sb-line);
+  margin: 10px 0;
+}
+
 /* 实时预览里的公式：$...$ 行内、$$...$$ 块级（KaTeX） */
 .cm-md-math {
   display: block;

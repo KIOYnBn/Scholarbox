@@ -30,6 +30,10 @@ export async function loadPdfDocument(
     cMapUrl: '/pdfjs/cmaps/',
     cMapPacked: true,
     standardFontDataUrl: '/pdfjs/standard_fonts/',
+    // pdf.js ≥5 的 JPEG2000 / JBIG2 / QCMS 解码走 WASM，没给 wasmUrl 时
+    // 这些解码器直接不可用 —— 扫描版 PDF 整页空白（像缺页）、普通 PDF 丢插图。
+    wasmUrl: '/pdfjs/wasm/',
+    iccUrl: '/pdfjs/iccs/',
     useSystemFonts: true,
   })
 

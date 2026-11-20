@@ -81,6 +81,10 @@ export function NotesLibrary({
   const setMode = useUiStore((s) => s.setNotesMode)
   const dimension = useUiStore((s) => s.notesDimension)
   const setDimension = useUiStore((s) => s.setNotesDimension)
+  const zoom = useUiStore((s) => s.shelfZoom)
+  const setShelfZoom = useUiStore((s) => s.setShelfZoom)
+  const pinnedShelves = useUiStore((s) => s.pinnedShelves)
+  const toggleShelfPin = useUiStore((s) => s.toggleShelfPin)
   const homeMode = useUiStore((s) => s.homeNotesMode)
   const grouped = useUiStore((s) => s.notesGrouped)
   const setGrouped = useUiStore((s) => s.setNotesGrouped)
@@ -109,7 +113,13 @@ export function NotesLibrary({
   // 平铺列表不看置顶；分组/书架时组内才让置顶靠前
   const filtered = useMemo(() => sortItems(matched, sort, { pinnedFirst: false }), [matched, sort])
   const groups = useMemo(() => groupByField(matched, sort), [matched, sort])
-  const shelves = useMemo(() => buildShelves(matched, dimension, sort), [matched, dimension, sort])
+  const builtShelves = useMemo(() => buildShelves(matched, dimension, sort), [matched, dimension, sort])
+  // 置顶的层排在最前面（与文献书架同一套交互）
+  const shelves = useMemo(() => {
+    if (pinnedShelves.length === 0) return builtShelves
+    const rank = (key: string) => (pinnedShelves.includes(key) ? 0 : 1)
+    return [...builtShelves].sort((a, b) => rank(a.key) - rank(b.key))
+  }, [builtShelves, pinnedShelves])
   const facets = useMemo(() => ({ fields: fieldFacets(items), tags: tagFacets(items) }), [items])
 
   // 状态页签：文献笔记用阅读状态，独立笔记用草稿/在写/归档，两类并存时都列出来
@@ -309,6 +319,9 @@ export function NotesLibrary({
           collapsed={collapsed.includes(shelf.key)}
           onToggle={toggleShelf}
           selectedKey={null}
+          zoom={zoom}
+          pinned={pinnedShelves.includes(shelf.key)}
+          onTogglePinShelf={toggleShelfPin}
           onOpen={open}
           onHover={(item, rect) => setHover(item && rect ? { item, rect } : null)}
           onContextMenu={(item, at) => setMenu({ item, at })}
@@ -455,6 +468,10 @@ export function NotesLibrary({
                     : shelves.map((shelf) => shelf.key),
                 )
               }
+              zoom={zoom}
+              onZoomIn={() => setShelfZoom(zoom + 0.1)}
+              onZoomOut={() => setShelfZoom(zoom - 0.1)}
+              onZoomReset={() => setShelfZoom(1)}
             />
             <ShelfBoard showEmpty={shelves.length === 0} empty={emptyNode}>
               {shelves.map((shelf) => (
@@ -464,6 +481,9 @@ export function NotesLibrary({
                   collapsed={collapsed.includes(shelf.key)}
                   onToggle={toggleShelf}
                   selectedKey={null}
+                  zoom={zoom}
+                  pinned={pinnedShelves.includes(shelf.key)}
+                  onTogglePinShelf={toggleShelfPin}
                   onOpen={open}
                   onHover={(item, rect) => setHover(item && rect ? { item, rect } : null)}
                   onContextMenu={(item, at) => setMenu({ item, at })}

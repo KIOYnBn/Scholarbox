@@ -233,6 +233,7 @@ export function NoteSurface({
               placeholder={placeholder}
               handleRef={editorRef}
               assetBase={paperDir ?? ''}
+              onOpenWiki={onOpenWiki}
               onChange={setValue}
             />
           </div>

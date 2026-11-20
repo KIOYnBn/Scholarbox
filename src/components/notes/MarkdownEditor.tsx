@@ -78,6 +78,8 @@ const MARK_CLASS: Record<string, string> = {
 
 /** 整行只有一个图片时的写法：`![alt](assets/x.png)`，实时预览换成真图 */
 const IMAGE_LINE = /^\s*!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)\s*$/
+/** 行内的 `[[链接]]` / `[[路径|别名]]` / `![[嵌入]]`（Obsidian 语法） */
+const WIKI_INLINE = /(!?)\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g
 
 /**
  * 「实时预览」的核心：光标外的行把语法标记藏起来、给正文套样式；光标所在行保持源码，
@@ -94,7 +96,12 @@ function looksLikeHtmlLine(text: string): boolean {
   return /^<[a-zA-Z][\w-]*(\s[^<>]*)?>/.test(t) && /<\/[a-zA-Z][\w-]*>\s*$|\/>\s*$/.test(t)
 }
 
-function previewDecorations(view: EditorView, mode: EditorMode, assetBase = '') {
+function previewDecorations(
+  view: EditorView,
+  mode: EditorMode,
+  assetBase = '',
+  openWiki: (path: string, embed: boolean) => void = () => undefined,
+) {
   const active = new Set<number>()
   if (mode === 'live') {
     for (const range of view.state.selection.ranges) {
@@ -150,6 +157,25 @@ function previewDecorations(view: EditorView, mode: EditorMode, assetBase = '') 
     }
     // 整行就是一张图：换成真图（截图插入的典型结果）
     const raw = doc.sliceString(line.from, line.to)
+    if (line.block === 'hr') {
+      widgets.push({ from: line.from, to: line.to, widget: new HrWidget() })
+      return
+    }
+    // 行内 wiki 链接（一行可以有多个）
+    WIKI_INLINE.lastIndex = 0
+    let wikiMatch: RegExpExecArray | null
+    while ((wikiMatch = WIKI_INLINE.exec(raw))) {
+      const embed = wikiMatch[1] === '!'
+      const path = wikiMatch[2]!.trim()
+      const label = (wikiMatch[3] ?? path.split('/').pop() ?? path).trim()
+      const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(path)
+      const at = { from: line.from + wikiMatch.index, to: line.from + wikiMatch.index + wikiMatch[0].length }
+      if (embed && isImage) {
+        widgets.push({ ...at, widget: new ImageWidget(path, assetBase, label) })
+      } else {
+        widgets.push({ ...at, widget: new WikiLinkWidget(path, label, embed, openWiki) })
+      }
+    }
     const image = IMAGE_LINE.exec(raw)
     if (image) {
       widgets.push({ from: line.from, to: line.to, widget: new ImageWidget(image[2]!, assetBase, image[1] ?? '') })
@@ -227,6 +253,54 @@ function previewDecorations(view: EditorView, mode: EditorMode, assetBase = '') 
   }
 
   return Decoration.set(ranges, true)
+}
+
+/** 分割线：`---` 整行换成一个真的 hr（光标进这行就露源码，好删好改） */
+class HrWidget extends WidgetType {
+  eq() {
+    return true
+  }
+  toDOM() {
+    const hr = document.createElement('hr')
+    hr.className = 'cm-md-hr'
+    return hr
+  }
+  ignoreEvent() {
+    return false
+  }
+}
+
+/**
+ * 实时预览里的 `[[wiki 链接]]`：藏掉双方括号，显示成可点的链接（Obsidian 样式）。
+ * 点击直接跳转：笔记进全屏编辑，PDF 回阅读器 —— 和阅读视图里的行为一致。
+ * 图片嵌入 `![[x.png]]` 走 ImageWidget 渲染成真图。
+ */
+class WikiLinkWidget extends WidgetType {
+  constructor(
+    readonly path: string,
+    readonly label: string,
+    readonly embed: boolean,
+    readonly open: (path: string, embed: boolean) => void,
+  ) {
+    super()
+  }
+  eq(other: WikiLinkWidget) {
+    return other.path === this.path && other.label === this.label && other.embed === this.embed
+  }
+  toDOM() {
+    const span = document.createElement('span')
+    span.className = 'cm-md-wikilink'
+    span.textContent = this.embed ? `📄 ${this.label}` : this.label
+    span.title = `打开 ${this.path}`
+    span.addEventListener('click', (event) => {
+      event.preventDefault()
+      this.open(this.path, this.embed)
+    })
+    return span
+  }
+  ignoreEvent() {
+    return false
+  }
 }
 
 /**
@@ -487,16 +561,16 @@ const blockDecorationsField = StateField.define<{
   provide: (field) => EditorView.decorations.from(field, (value) => value.deco),
 })
 
-function buildPlugin(mode: EditorMode, assetBase = '') {
+function buildPlugin(mode: EditorMode, assetBase = '', openWiki?: (path: string, embed: boolean) => void) {
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet
       constructor(view: EditorView) {
-        this.decorations = previewDecorations(view, mode, assetBase)
+        this.decorations = previewDecorations(view, mode, assetBase, openWiki)
       }
       update(update: ViewUpdate) {
         if (update.docChanged || update.selectionSet || update.viewportChanged) {
-          this.decorations = previewDecorations(update.view, mode, assetBase)
+          this.decorations = previewDecorations(update.view, mode, assetBase, openWiki)
         }
       }
     },
@@ -678,7 +752,7 @@ export function MarkdownEditor({
           cursorRef.current?.(update.state.doc.lineAt(head).number)
         }
       }),
-      extras.current.mode.of(buildPlugin(mode, assetBase)),
+      extras.current.mode.of(buildPlugin(mode, assetBase, onOpenWiki)),
       blockDecorationsField,
       extras.current.options.of(buildOptions(prefsRef.current)),
       extras.current.readonly.of([
@@ -748,7 +822,7 @@ export function MarkdownEditor({
     if (!view) return
     view.dispatch({
       effects: [
-        extras.current.mode.reconfigure(buildPlugin(mode, assetBase)),
+        extras.current.mode.reconfigure(buildPlugin(mode, assetBase, onOpenWiki)),
         // 只切「能不能编辑」，不要碰主题那一格
         extras.current.readonly.reconfigure([
           EditorView.editable.of(mode !== 'read'),
@@ -758,7 +832,7 @@ export function MarkdownEditor({
         setBlockConfig.of({ mode, assetBase }),
       ],
     })
-  }, [mode, assetBase])
+  }, [mode, assetBase, onOpenWiki])
 
   /* 开关类选项 + 字体：只重配 options 这一格 */
   useEffect(() => {

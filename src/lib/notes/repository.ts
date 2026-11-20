@@ -4,7 +4,6 @@ import type { NoteStatus } from '@/lib/library/item'
 import {
   DEFAULT_IMPORTANCE,
   nowIso,
-  noteTitle,
   parseNote,
   stringifyNote,
   withFrontmatter,
@@ -193,7 +192,9 @@ export function toNote(file: string, text: string, mtime: string | null): Standa
   return {
     file,
     slug,
-    title: noteTitle(body, slug),
+    // 显示名 = 文件名（去掉 .md）：标题和文件名必须一致，
+    // 之前取正文里的第一个 `# 标题`，正文一改标题显示名就飘了
+    title: slug,
     tags: data.tags,
     field: data.field,
     importance: data.importance,

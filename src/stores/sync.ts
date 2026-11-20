@@ -22,6 +22,7 @@ import {
   push,
   rebuildLocalGit,
   remoteUrl,
+  revertToCommit as revertToCommitFn,
   switchBranch as switchBranchFn,
   verifyRemote,
   type BranchInfo,
@@ -53,6 +54,7 @@ export type SyncAction =
   | 'history'
   | 'branch'
   | 'reset'
+  | 'revert'
 
 interface SyncState {
   /** 是否是 Git 仓库（且已绑定远端） */
@@ -91,6 +93,8 @@ interface SyncState {
   switchBranch: (name: string) => Promise<boolean>
   /** 把某个分支合进当前分支 */
   mergeBranch: (name: string) => Promise<boolean>
+  /** 回退到某条提交：生成一个普通提交把所有文件恢复到当时的状态（不重写历史） */
+  revertToCommit: (oid: string, message: string) => Promise<boolean>
   /** 删掉本地 .git 再重建；keepRemote 时把远端历史接回来 */
   resetGit: (keepRemote: boolean) => Promise<boolean>
   /** 只删本地 .git（不再接远端），等于断开同步 */
@@ -420,6 +424,36 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
         notice: result.fastForward
           ? `「${result.source}」已快进合并到「${result.branch}」`
           : `已把「${result.source}」合并到「${result.branch}」`,
+        lastSyncAt: Date.now(),
+      })
+      return true
+    } catch (err) {
+      set({ ...fail(err, 'refresh'), busy: null })
+      return false
+    }
+  },
+
+  async revertToCommit(oid, message) {
+    if (get().busy) return false
+    set({ busy: 'revert', error: null, hint: null, notice: null })
+    try {
+      const fs = vaultFs()
+      // 先把手上的改动提交掉：回退是对「已提交状态」的操作，
+      // 未提交的笔记直接跟着工作区走会被覆盖，先提交才保得住
+      const summary = await changeSummary(fs)
+      const dirty = summary.added + summary.modified + summary.deleted
+      if (dirty > 0) {
+        await commitAll(fs, `回退前自动提交 · ${stamp()}`, identity())
+      }
+      const result = await revertToCommitFn(fs, oid, message, identity())
+      await useLibraryStore.getState().load()
+      await get().refresh()
+      await get().loadHistory()
+      set({
+        busy: null,
+        notice: dirty > 0
+          ? `已自动提交 ${dirty} 个改动，并回退到 ${result.oid.slice(0, 7)}（生成新提交，历史完整）`
+          : `已回退到 ${result.oid.slice(0, 7)}，共 ${result.files} 个文件（生成新提交，历史完整）`,
         lastSyncAt: Date.now(),
       })
       return true

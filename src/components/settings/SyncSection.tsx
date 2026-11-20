@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
   CheckCircle2,
   Cloud,
@@ -8,6 +8,7 @@ import {
   Loader2,
   PlugZap,
   RefreshCw,
+  RotateCcw,
   Upload,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settings'
@@ -47,6 +48,9 @@ export function SyncSection() {
   const syncNow = useSyncStore((s) => s.syncNow)
   const refresh = useSyncStore((s) => s.refresh)
   const loadHistory = useSyncStore((s) => s.loadHistory)
+  const revertToCommit = useSyncStore((s) => s.revertToCommit)
+  /** 正在确认回退的那条提交（两步确认，防误点） */
+  const [confirmingOid, setConfirmingOid] = useState<string | null>(null)
 
   const vaultReady = useVaultStore((s) => s.status === 'ready')
 
@@ -276,25 +280,74 @@ export function SyncSection() {
           </div>
         ) : (
           <ul className="sb-scroll max-h-44 overflow-y-auto rounded-lg border border-line">
-            {history.map((entry, index) => (
-              <li
-                key={entry.oid}
-                className={cn(
-                  'flex items-start gap-2 px-2.5 py-1.5',
-                  index > 0 && 'border-t border-line/60',
-                )}
-              >
-                <span className="mt-0.5 font-mono text-[10px] text-accent">{entry.short}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[11px] text-ink" title={entry.message}>
-                    {entry.message}
-                  </p>
-                  <p className="text-[10px] text-ink-3">
-                    {entry.author} · {formatRelative(new Date(entry.timestamp).toISOString())}
-                  </p>
-                </div>
-              </li>
-            ))}
+            {history.map((entry, index) => {
+              const confirming = confirmingOid === entry.oid
+              return (
+                <li
+                  key={entry.oid}
+                  className={cn(
+                    'flex items-start gap-2 px-2.5 py-1.5',
+                    index > 0 && 'border-t border-line/60',
+                  )}
+                >
+                  <span className="mt-0.5 font-mono text-[10px] text-accent">{entry.short}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[11px] text-ink" title={entry.message}>
+                      {entry.message}
+                    </p>
+                    <p className="text-[10px] text-ink-3">
+                      {entry.author} · {formatRelative(new Date(entry.timestamp).toISOString())}
+                    </p>
+                    {confirming ? (
+                      <div className="mt-1 rounded-md border border-warn/30 bg-warn/5 px-2 py-1.5">
+                        <p className="text-[10px] leading-relaxed text-ink-2">
+                          将生成一个新提交，把 <b>所有文件</b> 恢复到这条提交时的状态；
+                          当前未提交的改动会先自动提交。<b>历史不会被抹掉</b>，之后随时可以再回回来。
+                        </p>
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => {
+                              setConfirmingOid(null)
+                              void revertToCommit(
+                                entry.oid,
+                                `回退到 ${entry.short}：${entry.message.slice(0, 40)}`,
+                              )
+                            }}
+                            className="inline-flex items-center gap-0.5 rounded border border-warn bg-warn/10 px-1.5 py-0.5 text-[10px] text-ink hover:bg-warn/20 disabled:opacity-40"
+                          >
+                            {busy === 'revert' ? <Loader2 className="size-2.5 animate-spin" /> : <RotateCcw className="size-2.5" />}
+                            确认回退
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingOid(null)}
+                            className="text-[10px] text-ink-3 hover:text-ink"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                  {index > 0 ? (
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => setConfirmingOid(confirming ? null : entry.oid)}
+                      title="回退到此版本（生成新提交，不重写历史）"
+                      className="mt-0.5 flex shrink-0 items-center gap-0.5 rounded border border-line px-1.5 py-0.5 text-[10px] text-ink-2 hover:border-accent/60 hover:text-accent disabled:opacity-40"
+                    >
+                      <RotateCcw className="size-2.5" />
+                      回退
+                    </button>
+                  ) : (
+                    <span className="mt-0.5 shrink-0 text-[9.5px] text-ink-3">最新</span>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>

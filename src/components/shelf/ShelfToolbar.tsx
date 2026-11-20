@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
+import { ChevronsDownUp, ChevronsUpDown, ZoomIn, ZoomOut } from 'lucide-react'
 import { DIMENSION_LABELS, type ShelfDimension } from '@/lib/shelf'
 import { cn } from '@/lib/utils'
 
@@ -14,6 +14,11 @@ export interface ShelfToolbarProps {
   collapsible: boolean
   allCollapsed: boolean
   onToggleAll: () => void
+  /** 书架缩放（书脊大小）；传了才显示缩放控件 */
+  zoom?: number
+  onZoomIn?: () => void
+  onZoomOut?: () => void
+  onZoomReset?: () => void
 }
 
 /** 书架模式下那条「分架 / 层数 / 清除筛选 / 全部收起」的工具条，两个书库共用 */
@@ -27,6 +32,10 @@ export function ShelfToolbar({
   collapsible,
   allCollapsed,
   onToggleAll,
+  zoom,
+  onZoomIn,
+  onZoomOut,
+  onZoomReset,
 }: ShelfToolbarProps) {
   return (
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-surface/50 px-4">
@@ -52,6 +61,38 @@ export function ShelfToolbar({
       <span className="text-[10.5px] tabular-nums text-ink-3">{summary}</span>
 
       <div className="ml-auto flex items-center gap-2">
+        {typeof zoom === 'number' && onZoomIn && onZoomOut ? (
+          <div className="flex items-center gap-0.5 rounded-lg bg-surface-3/60 p-0.5">
+            <button
+              type="button"
+              onClick={onZoomOut}
+              disabled={zoom <= 0.7}
+              title="缩小书脊"
+              aria-label="缩小书脊"
+              className="inline-flex size-5 items-center justify-center rounded-[5px] text-ink-2 transition-colors hover:bg-surface hover:text-ink disabled:opacity-30"
+            >
+              <ZoomOut className="size-3" />
+            </button>
+            <button
+              type="button"
+              onClick={onZoomReset}
+              title="点击恢复默认大小"
+              className="min-w-[3em] rounded-[5px] px-1 text-center text-[10.5px] tabular-nums text-ink-2 transition-colors hover:text-ink"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              type="button"
+              onClick={onZoomIn}
+              disabled={zoom >= 1.6}
+              title="放大书脊"
+              aria-label="放大书脊"
+              className="inline-flex size-5 items-center justify-center rounded-[5px] text-ink-2 transition-colors hover:bg-surface hover:text-ink disabled:opacity-30"
+            >
+              <ZoomIn className="size-3" />
+            </button>
+          </div>
+        ) : null}
         {hasFilter ? (
           <button
             type="button"

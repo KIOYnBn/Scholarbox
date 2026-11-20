@@ -44,6 +44,10 @@ export function LibraryHome() {
   const dimension = useUiStore((s) => s.shelfDimension)
   const sortBy = useSettingsStore((s) => s.sortBy)
   const setDimension = useUiStore((s) => s.setShelfDimension)
+  const shelfZoom = useUiStore((s) => s.shelfZoom)
+  const setShelfZoom = useUiStore((s) => s.setShelfZoom)
+  const pinnedShelves = useUiStore((s) => s.pinnedShelves)
+  const toggleShelfPin = useUiStore((s) => s.toggleShelfPin)
   const setMainView = useUiStore((s) => s.setMainView)
   const openNoteDialog = useUiStore((s) => s.openNoteDialog)
   const openMetaDialog = useUiStore((s) => s.openMetaDialog)
@@ -62,7 +66,13 @@ export function LibraryHome() {
   const filtered = useMemo(() => selectFilteredPapers({ papers, filter }), [papers, filter])
   const items = useMemo(() => filtered.map((paper) => itemFromPaper(paper, 'paper')), [filtered])
   // 书架每层内部按当前排序键排，置顶只在所属层里靠前
-  const shelves = useMemo(() => buildShelves(items, dimension, sortBy), [items, dimension, sortBy])
+  const builtShelves = useMemo(() => buildShelves(items, dimension, sortBy), [items, dimension, sortBy])
+  // 用户置顶的层排在最前面（稳定排序：未置顶的保持原来的分架顺序）
+  const shelves = useMemo(() => {
+    if (pinnedShelves.length === 0) return builtShelves
+    const rank = (key: string) => (pinnedShelves.includes(key) ? 0 : 1)
+    return [...builtShelves].sort((a, b) => rank(a.key) - rank(b.key))
+  }, [builtShelves, pinnedShelves])
 
   const hasFilter =
     filter.query.trim().length > 0 ||
@@ -196,6 +206,10 @@ export function LibraryHome() {
             collapsible={shelves.length > 0}
             allCollapsed={allCollapsed}
             onToggleAll={() => setCollapsed(allCollapsed ? [] : shelves.map((shelf) => shelf.key))}
+            zoom={shelfZoom}
+            onZoomIn={() => setShelfZoom(shelfZoom + 0.1)}
+            onZoomOut={() => setShelfZoom(shelfZoom - 0.1)}
+            onZoomReset={() => setShelfZoom(1)}
           />
 
           <ShelfBoard
@@ -276,6 +290,9 @@ export function LibraryHome() {
                 collapsed={collapsed.includes(shelf.key)}
                 onToggle={toggleShelf}
                 selectedKey={`paper:${selectedDir ?? ''}`}
+                zoom={shelfZoom}
+                pinned={pinnedShelves.includes(shelf.key)}
+                onTogglePinShelf={toggleShelfPin}
                 onOpen={openReader}
                 onHover={(item, rect) => setHover(item && rect ? { item, rect } : null)}
                 onContextMenu={(item, at) => setMenu({ item, at })}

@@ -98,14 +98,14 @@ export const useStandaloneNotesStore = create<StandaloneState>((set, get) => ({
     const repo = repository()
     if (!repo) throw new Error('文献库还没打开')
     const next = await repo.save(file, text)
-    // 保存后回填 frontmatter 的 updated 与标题，侧栏排序才不会停在旧位置
+    // 保存后回填 updated，侧栏排序才不会停在旧位置。
+    // 标题（显示名）= 文件名，保存不动文件名就不动标题；正文里的 `# 标题` 是内容。
     set({
       notes: sortNotes(
         get().notes.map((note) =>
           note.file === file
             ? {
                 ...note,
-                title: extractTitle(next, note.slug),
                 updatedAt: new Date().toISOString(),
                 mtime: new Date().toISOString(),
                 body: next,
@@ -164,13 +164,6 @@ export const useStandaloneNotesStore = create<StandaloneState>((set, get) => ({
     set({ notes: [], loading: false, error: null, query: '', tag: null })
   },
 }))
-
-function extractTitle(text: string, slug: string): string {
-  // 复用 repository 里同一套解析：frontmatter 之后的第一个标题
-  const body = text.replace(/^---[\s\S]*?\n---[ \t]*\r?\n?/, '')
-  const match = body.match(/^#\s+(.+?)\s*$/m)
-  return match ? match[1]! : slug
-}
 
 function sortNotes(notes: StandaloneNote[]): StandaloneNote[] {
   return [...notes].sort((a, b) => (b.updatedAt ?? b.mtime ?? '').localeCompare(a.updatedAt ?? a.mtime ?? ''))
