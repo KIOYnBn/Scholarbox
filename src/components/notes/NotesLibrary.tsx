@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronsDownUp,
   ChevronsUpDown,
+  FileUp,
   Grid2x2,
   Layers,
   LayoutList,
@@ -11,6 +12,8 @@ import {
   Settings2,
   X,
 } from 'lucide-react'
+import { importMarkdownFiles, pickMarkdownFiles } from '@/lib/notes/import'
+import { useVaultStore } from '@/stores/vault'
 import { useLibraryStore } from '@/stores/library'
 import { useStandaloneNotesStore } from '@/stores/standalone'
 import { useUiStore } from '@/stores/ui'
@@ -174,6 +177,19 @@ export function NotesLibrary({
   const create = async () => {
     const note = await createNote()
     if (note) openNote({ kind: 'standalone', file: note.file })
+  }
+
+  /** 从磁盘选 .md 文件导入成独立笔记 */
+  const importFromPicker = async () => {
+    const files = await pickMarkdownFiles()
+    if (files.length === 0) return
+    const notice = useVaultStore.getState().setNotice
+    try {
+      const created = await importMarkdownFiles(files)
+      notice(`已导入 ${created.length} 篇 Markdown 笔记`)
+    } catch (err) {
+      notice(`导入失败：${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   const setStatus = (item: LibraryItem, status: ItemStatus) => {
@@ -430,6 +446,15 @@ export function NotesLibrary({
             <>
               <button
                 type="button"
+                onClick={() => void importFromPicker()}
+                title="导入 Markdown 笔记"
+                aria-label="导入 Markdown 笔记"
+                className="inline-flex size-7 items-center justify-center rounded-md border border-line text-ink-2 transition hover:border-accent/50 hover:text-accent"
+              >
+                <FileUp className="size-4" />
+              </button>
+              <button
+                type="button"
                 onClick={() => void create()}
                 title="新建笔记"
                 aria-label="新建笔记"
@@ -564,14 +589,25 @@ export function NotesLibrary({
           />
         </div>
 
-        <button
-          type="button"
-          onClick={() => void create()}
-          className="sb-btn sb-btn-primary h-7 w-full justify-center text-[11.5px]"
-        >
-          <Plus className="size-3.5" />
-          新建笔记
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => void create()}
+            className="sb-btn sb-btn-primary h-7 min-w-0 flex-1 justify-center text-[11.5px]"
+          >
+            <Plus className="size-3.5" />
+            新建笔记
+          </button>
+          <button
+            type="button"
+            onClick={() => void importFromPicker()}
+            title="导入 Markdown 笔记"
+            aria-label="导入 Markdown 笔记"
+            className="sb-btn sb-btn-primary h-7 w-7 shrink-0 justify-center text-[11.5px]"
+          >
+            <FileUp className="size-3.5" />
+          </button>
+        </div>
 
         {statusTabsNode}
         {facetNode}

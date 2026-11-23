@@ -13,6 +13,7 @@ import { useSettingsStore, vaultUiPrefs } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { useVaultStore } from '@/stores/vault'
 import { guessMetadataFromFilename, isPdfFile } from '@/lib/pdf'
+import { importMarkdownFiles, isMarkdownFile } from '@/lib/notes/import'
 import { useMediaQuery } from '@/hooks/useTheme'
 import { cn } from '@/lib/utils'
 
@@ -122,7 +123,9 @@ export function AppShell() {
       event.preventDefault()
       dragging.current = 0
       setDropping(false)
-      const files = Array.from(event.dataTransfer?.files ?? []).filter((file) => isPdfFile(file.name))
+      const dropped = Array.from(event.dataTransfer?.files ?? [])
+      const files = dropped.filter((file) => isPdfFile(file.name))
+      const markdown = dropped.filter((file) => isMarkdownFile(file.name))
       void (async () => {
         let first: string | null = null
         for (const file of files) {
@@ -135,6 +138,19 @@ export function AppShell() {
           first ??= record?.dir ?? null
         }
         if (first) useLibraryStore.getState().select(first)
+        // .md 文件导入成独立笔记（与「导入 Markdown」按钮走同一套逻辑）
+        if (markdown.length > 0) {
+          try {
+            const created = await importMarkdownFiles(markdown)
+            useVaultStore
+              .getState()
+              .setNotice(`已导入 ${created.length} 篇 Markdown 笔记`)
+          } catch (err) {
+            useVaultStore
+              .getState()
+              .setNotice(`导入 Markdown 失败：${err instanceof Error ? err.message : String(err)}`)
+          }
+        }
       })()
     }
 
@@ -353,8 +369,8 @@ export function AppShell() {
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-ink/20 backdrop-blur-[2px]">
           <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-accent/60 bg-surface/95 px-10 py-8 shadow-xl">
             <FileUp className="size-7 text-accent" />
-            <div className="text-[13px] font-medium text-ink">松开以导入 PDF</div>
-            <div className="text-[11px] text-ink-3">会自动建立 papers/ 文件夹与 meta.json</div>
+            <div className="text-[13px] font-medium text-ink">松开以导入：PDF → 文献 · .md → 独立笔记</div>
+            <div className="text-[11px] text-ink-3">PDF 会自动建立 papers/ 文件夹与 meta.json</div>
           </div>
         </div>
       ) : null}
