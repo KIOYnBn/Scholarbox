@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { resolveAssetUrl, resolveNoteImagePath } from '@/lib/asset-url'
 import { renderReadingHtml } from '@/lib/notes/reading'
+import { applyCallouts } from '@/lib/notes/callout'
+import { applyEmbeds } from '@/lib/notes/embed'
 import { isWikiHref } from '@/lib/notes/wiki'
+import { useEmbedResolver } from '@/hooks/useEmbedResolver'
 import { useSettingsStore } from '@/stores/settings'
 
 interface ReadingViewProps {
@@ -21,6 +24,7 @@ interface ReadingViewProps {
 export function ReadingView({ markdown, paperDir, onOpenWiki, fontSize, lineHeight }: ReadingViewProps) {
   const allowHtml = useSettingsStore((s) => s.editor.html)
   const fontFamily = useSettingsStore((s) => s.editor.previewFontFamily)
+  const resolveEmbed = useEmbedResolver()
   const containerRef = useRef<HTMLDivElement>(null)
   const { html, targets } = useMemo(
     () => renderReadingHtml(markdown, { allowHtml }),
@@ -33,6 +37,10 @@ export function ReadingView({ markdown, paperDir, onOpenWiki, fontSize, lineHeig
   useEffect(() => {
     const root = containerRef.current
     if (!root) return
+    // callout：`> [!note] 标题` 的引用块转成色块（Obsidian 样式）
+    applyCallouts(root)
+    // 嵌入：`![[笔记]]` 占位换成内联渲染的正文（防环，深度 3）
+    applyEmbeds(root, paperDir, resolveEmbed, { allowHtml })
     let cancelled = false
     const images = Array.from(root.querySelectorAll('img'))
     void Promise.all(
@@ -48,7 +56,7 @@ export function ReadingView({ markdown, paperDir, onOpenWiki, fontSize, lineHeig
     return () => {
       cancelled = true
     }
-  }, [html, paperDir])
+  }, [html, paperDir, resolveEmbed, allowHtml])
 
   return (
     <div

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
-import { expandWiki, isWikiHref, WIKI_SCHEME } from '../wiki'
+import { decodeEmbedToken, embedTokenFor, expandWiki, isWikiHref, WIKI_SCHEME } from '../wiki'
 import { escapeHtmlOutsideCode, renderReadingHtml } from '../reading'
 
 describe('wiki 语法展开', () => {
@@ -16,9 +16,22 @@ describe('wiki 语法展开', () => {
     expect(expandWiki('[[notes/a.md|第一篇]]').markdown).toContain('[第一篇](')
   })
 
-  it('![[图片]] 用图片语法，![[笔记]] 用卡片链接', () => {
+  it('![[图片]] 用图片语法，![[笔记]] 变嵌入占位符，![[pdf]] 保持卡片链接', () => {
     expect(expandWiki('![[assets/p1.png]]').markdown).toMatch(/!\[p1\.png\]/)
-    expect(expandWiki('![[notes/会议记录.md]]').markdown).toContain('[📄 会议记录.md](')
+    const noteEmbed = expandWiki('![[notes/会议记录.md]]').markdown
+    expect(noteEmbed).toMatch(/%%SBEMBED:[A-Za-z0-9+/=]+%%/)
+    expect(expandWiki('![[papers/x/origin.pdf]]').markdown).toContain('[📄 origin.pdf](')
+  })
+
+  it('嵌入占位符可无损反解（中文路径）', () => {
+    const token = embedTokenFor('notes/实验 记录.md')
+    expect(decodeEmbedToken(token)).toBe('notes/实验 记录.md')
+  })
+
+  it('嵌入占位符渲染成 data-sb-embed 占位元素', () => {
+    const { html } = renderReadingHtml('![[notes/a.md]]', { allowHtml: false })
+    expect(html).toContain('data-sb-embed=')
+    expect(html).not.toContain('%%SBEMBED')
   })
 
   it('普通链接不受影响', () => {

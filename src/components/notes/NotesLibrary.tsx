@@ -6,6 +6,7 @@ import {
   Grid2x2,
   Layers,
   LayoutList,
+  Network,
   NotebookPen,
   Plus,
   Search,
@@ -13,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { importMarkdownFiles, pickMarkdownFiles } from '@/lib/notes/import'
+import { GraphDialog } from '@/components/notes/GraphView'
 import { useVaultStore } from '@/stores/vault'
 import { useLibraryStore } from '@/stores/library'
 import { useStandaloneNotesStore } from '@/stores/standalone'
@@ -424,6 +426,7 @@ export function NotesLibrary({
 
       <NoteMetaDialog file={metaFile} onClose={() => setMetaFile(null)} />
       <MetaDialog />
+      <GraphDialog />
     </>
   )
 
@@ -452,6 +455,15 @@ export function NotesLibrary({
                 className="inline-flex size-7 items-center justify-center rounded-md border border-line text-ink-2 transition hover:border-accent/50 hover:text-accent"
               >
                 <FileUp className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => useUiStore.getState().openGraph()}
+                title="关系图谱"
+                aria-label="关系图谱"
+                className="inline-flex size-7 items-center justify-center rounded-md border border-line text-ink-2 transition hover:border-accent/50 hover:text-accent"
+              >
+                <Network className="size-4" />
               </button>
               <button
                 type="button"
@@ -607,6 +619,15 @@ export function NotesLibrary({
           >
             <FileUp className="size-3.5" />
           </button>
+          <button
+            type="button"
+            onClick={() => useUiStore.getState().openGraph()}
+            title="关系图谱"
+            aria-label="关系图谱"
+            className="sb-btn sb-btn-primary h-7 w-7 shrink-0 justify-center text-[11.5px]"
+          >
+            <Network className="size-3.5" />
+          </button>
         </div>
 
         {statusTabsNode}
@@ -666,6 +687,7 @@ function SortButton({
           </option>
         ))}
       </select>
+      <GraphDialog />
     </div>
   )
 }

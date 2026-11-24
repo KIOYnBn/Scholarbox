@@ -104,6 +104,8 @@ export interface PaperMeta {
   lastViewedAt: string | null
   /** 置顶：只影响排序，不动文件 */
   pinned: boolean
+  /** 笔记文件名（papers/<目录>/ 下的 .md）：跟随标题命名，标题改名时文件跟着改。老库为 null（note.md） */
+  noteName: string | null
   /** page index -> scroll ratio, enables "resume where I left off" */
   lastPage: number
   /** PDF 高亮 / 下划线 / 删除线 / 框选标注，与文献同目录保存 */
@@ -207,6 +209,7 @@ export function normalizeMeta(raw: unknown, fallback: Partial<PaperMeta> = {}): 
     // 老 meta.json 没有这两个字段：读的时候补默认值，不批量改写磁盘
     lastViewedAt: (pick('lastViewedAt') as string | null) ?? (pick('lastOpenedAt') as string | null) ?? null,
     pinned: pick('pinned') === true,
+    noteName: typeof pick('noteName') === 'string' ? (pick('noteName') as string).trim() || null : null,
     lastPage: clampInt(pick('lastPage'), 0, 100_000, 0),
     annotations: normalizeAnnotations(pick('annotations')),
     annotationStyleVersion: ANNOTATION_STYLE_VERSION,
@@ -237,6 +240,7 @@ export function serializeMeta(meta: PaperMeta): string {
     lastOpenedAt: meta.lastOpenedAt,
     lastViewedAt: meta.lastViewedAt,
     pinned: meta.pinned,
+    noteName: meta.noteName ?? null,
     lastPage: meta.lastPage,
     annotations: meta.annotations ?? [],
     annotationStyleVersion: ANNOTATION_STYLE_VERSION,

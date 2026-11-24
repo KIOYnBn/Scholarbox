@@ -13,8 +13,18 @@ export type MainView = 'home' | 'workspace' | 'note'
 /** 侧栏两个页签：文献库 / 笔记 */
 export type SidebarTab = 'library' | 'notes'
 
-/** 全屏笔记的目标：某篇文献的 note.md，或 notes/ 下的独立笔记 */
-export type NoteTarget = { kind: 'paper'; dir: string } | { kind: 'standalone'; file: string }
+/** 全屏笔记的目标：某篇文献的 note 文件，或 notes/ 下的独立笔记；
+ * blockId 带块引用跳转（[[笔记#^id]]），打开后滚动定位到该块 */
+export type NoteTarget = ({ kind: 'paper'; dir: string } | { kind: 'standalone'; file: string }) & {
+  blockId?: string
+}
+
+/** 笔记右侧抽屉：大纲 / 反向链接 */
+export type NoteDrawerTab = 'outline' | 'backlinks'
+export interface NoteDrawerState {
+  pane: 'A' | 'B'
+  tab: NoteDrawerTab
+}
 
 interface UiState {
   mainView: MainView
@@ -26,6 +36,10 @@ interface UiState {
   noteTargetB: NoteTarget | null
   /** 笔记选择弹窗：正在为哪一栏挑选（null = 关闭） */
   notePickerFor: 'A' | 'B' | null
+  /** 笔记右侧抽屉（大纲 / 反向链接）；null = 收起 */
+  noteDrawer: NoteDrawerState | null
+  /** 关系图谱弹窗 */
+  graphOpen: boolean
   /** 从书库「独立打开」时记住来处，返回时回到原页面 */
   noteReturnView: MainView
   /** 书架缩放（书脊卡片的比例，1 = 默认），文献书架与笔记书架共用 */
@@ -65,6 +79,11 @@ interface UiState {
   /** 打开笔记选择弹窗，为指定栏挑一篇 */
   openNotePicker: (pane: 'A' | 'B') => void
   closeNotePicker: () => void
+  /** 开 / 收右侧抽屉（大纲 / 反链） */
+  toggleNoteDrawer: (pane: 'A' | 'B', tab: NoteDrawerTab) => void
+  closeNoteDrawer: () => void
+  openGraph: () => void
+  closeGraph: () => void
   setShelfZoom: (zoom: number) => void
   /** 置顶 / 取消置顶某个书架分组（置顶的层始终排在最上面） */
   toggleShelfPin: (key: string) => void
@@ -102,6 +121,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   noteTarget: null,
   noteTargetB: null,
   notePickerFor: null,
+  noteDrawer: null,
+  graphOpen: false,
   noteReturnView: 'home',
   shelfZoom: 1,
   pinnedShelves: [],
@@ -137,6 +158,15 @@ export const useUiStore = create<UiState>((set, get) => ({
   closeNoteB: () => set({ noteTargetB: null }),
   openNotePicker: (pane) => set({ notePickerFor: pane }),
   closeNotePicker: () => set({ notePickerFor: null }),
+  toggleNoteDrawer: (pane, tab) =>
+    set((state) => {
+      const current = state.noteDrawer
+      const same = current && current.pane === pane && current.tab === tab
+      return { noteDrawer: same ? null : { pane, tab } }
+    }),
+  closeNoteDrawer: () => set({ noteDrawer: null }),
+  openGraph: () => set({ graphOpen: true }),
+  closeGraph: () => set({ graphOpen: false }),
   setShelfZoom: (zoom) =>
     set({ shelfZoom: Math.min(SHELF_ZOOM_MAX, Math.max(SHELF_ZOOM_MIN, Math.round(zoom * 100) / 100)) }),
   toggleShelfPin: (key) =>

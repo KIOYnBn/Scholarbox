@@ -36,13 +36,20 @@ import {
   type CompletionContext,
   type CompletionResult,
 } from '@codemirror/autocomplete'
-import type { EditorPrefs } from '@/stores/settings'
+import { useSettingsStore, type EditorPrefs } from '@/stores/settings'
 import { scanMarkdown } from '@/lib/editor/markdown-syntax'
 import { blockInsertion } from '@/lib/editor/block-insert'
 import { resolveAssetUrl, resolveNoteImagePath } from '@/lib/asset-url'
 import { renderMarkdown } from '@/lib/markdown'
+import { renderReadingHtml } from '@/lib/notes/reading'
+import { applyCallouts } from '@/lib/notes/callout'
 import { renderMathHtml, scanMath } from '@/lib/notes/math'
+import { parseCalloutMarker } from '@/lib/notes/callout'
+import { applyEmbeds, resolveEmbedContent } from '@/lib/notes/embed'
+import { blockIdOnLine, extractBlockIds } from '@/lib/notes/blocks'
+import { isNoteEmbedPath, isWikiHref } from '@/lib/notes/wiki'
 import { continuationEdit, wikiContext, rankCandidates, type WikiCandidate } from '@/lib/editor/completion'
+import { useEmbedResolver } from '@/hooks/useEmbedResolver'
 
 export type EditorMode = 'source' | 'live' | 'read'
 
@@ -51,6 +58,10 @@ export interface MarkdownEditorHandle {
   insert: (text: string) => void
   /** 插入一段块级内容（截图）：必要时自己补空行，别把图片塞进句子中间 */
   insertBlock: (text: string) => void
+  /** 跳到指定行（1 起）：大纲面板点击定位用 */
+  revealLine: (line: number) => void
+  /** 定位到块引用 ^block-id 所在行：块链接跳转用 */
+  revealBlock: (blockId: string) => void
 }
 
 interface MarkdownEditorProps {
@@ -71,6 +82,7 @@ const MARK_CLASS: Record<string, string> = {
   bold: 'cm-md-bold',
   italic: 'cm-md-italic',
   strike: 'cm-md-strike',
+  highlight: 'cm-md-highlight',
   code: 'cm-md-code',
   link: 'cm-md-link',
   image: 'cm-md-link',
@@ -101,6 +113,8 @@ function previewDecorations(
   mode: EditorMode,
   assetBase = '',
   openWiki: (path: string, embed: boolean) => void = () => undefined,
+  resolveEmbed: (path: string) => string | null = () => null,
+  allowHtml = true,
 ) {
   const active = new Set<number>()
   if (mode === 'live') {
@@ -172,6 +186,9 @@ function previewDecorations(
       const at = { from: line.from + wikiMatch.index, to: line.from + wikiMatch.index + wikiMatch[0].length }
       if (embed && isImage) {
         widgets.push({ ...at, widget: new ImageWidget(path, assetBase, label) })
+      } else if (embed && isNoteEmbedPath(path)) {
+        // 笔记嵌入：![[笔记]] 内联渲染正文（Obsidian transclusion）
+        widgets.push({ ...at, widget: new EmbedWidget(path, resolveEmbed, allowHtml, openWiki) })
       } else {
         widgets.push({ ...at, widget: new WikiLinkWidget(path, label, embed, openWiki) })
       }
@@ -206,6 +223,19 @@ function previewDecorations(
           attributes: { style: `padding-left:${hang}ch;text-indent:-2ch` },
         }).range(line.from),
       )
+    }
+
+    // callout：`> [!note] 标题` 的引用块，整行着色 + 藏掉 [!type] 标记
+    if (line.block === 'quote') {
+      const marker = parseCalloutMarker(doc.sliceString(line.from, line.to))
+      if (marker) {
+        ranges.push(Decoration.line({ class: `cm-md-callout cm-md-callout-${marker.family}` }).range(line.from))
+        const markerRaw = doc.sliceString(line.from, line.to)
+        const at = markerRaw.indexOf(`[!${marker.type}]`)
+        if (at >= 0) {
+          marks.push({ from: line.from + at, to: line.from + at + marker.type.length + 3, cls: 'cm-md-taken' })
+        }
+      }
     }
 
     const blockClass =
@@ -267,6 +297,65 @@ class HrWidget extends WidgetType {
   }
   ignoreEvent() {
     return false
+  }
+}
+
+/**
+ * 实时预览里的笔记嵌入：`![[笔记]]` 内联渲染整篇正文（Obsidian transclusion）。
+ * 渲染走完整阅读管线（wiki / 公式 / callout / 嵌套嵌入），防环靠 visited。
+ */
+class EmbedWidget extends WidgetType {
+  constructor(
+    readonly path: string,
+    readonly resolve: (path: string) => string | null,
+    readonly allowHtml: boolean,
+    readonly openWiki: (path: string, embed: boolean) => void,
+  ) {
+    super()
+  }
+  eq(other: EmbedWidget) {
+    return other.path === this.path
+  }
+  toDOM() {
+    const wrap = document.createElement('div')
+    wrap.className = 'cm-md-embed'
+    const visited = new Set<string>()
+    const body = resolveEmbedContent(this.path, this.resolve, visited)
+    if (body === null) {
+      wrap.classList.add('md-embed-missing')
+      wrap.textContent = `找不到要嵌入的笔记：${this.path}`
+      return wrap
+    }
+    const { html } = renderReadingHtml(body, { allowHtml: this.allowHtml })
+    const inner = document.createElement('div')
+    inner.innerHTML = html
+    applyCallouts(inner)
+    applyEmbeds(inner, '', this.resolve, { depth: 1, visited, allowHtml: this.allowHtml })
+    while (inner.firstChild) wrap.appendChild(inner.firstChild)
+    // 嵌入内容里的相对图片补真实地址（异步）
+    for (const img of Array.from(wrap.querySelectorAll('img'))) {
+      const rawSrc = img.getAttribute('src') ?? ''
+      if (!rawSrc || /^(https?:|data:|blob:|file:)/i.test(rawSrc)) continue
+      void resolveAssetUrl(resolveNoteImagePath(rawSrc, ''))
+        .then((url) => {
+          if (url) img.src = url
+        })
+        .catch(() => undefined)
+    }
+    // 嵌入内容里的 wiki 链接可点：走和外部一样的跳转
+    wrap.addEventListener('click', (event) => {
+      const anchor = (event.target as HTMLElement).closest('a')
+      if (!anchor) return
+      const target = isWikiHref(anchor.getAttribute('href'))
+      if (!target) return
+      event.preventDefault()
+      this.openWiki(target, false)
+    })
+    return wrap
+  }
+  ignoreEvent() {
+    // 嵌入内容是可交互的（链接点击），不让 CodeMirror 接管
+    return true
   }
 }
 
@@ -561,16 +650,22 @@ const blockDecorationsField = StateField.define<{
   provide: (field) => EditorView.decorations.from(field, (value) => value.deco),
 })
 
-function buildPlugin(mode: EditorMode, assetBase = '', openWiki?: (path: string, embed: boolean) => void) {
+function buildPlugin(
+  mode: EditorMode,
+  assetBase = '',
+  openWiki?: (path: string, embed: boolean) => void,
+  resolveEmbed?: (path: string) => string | null,
+  allowHtml = true,
+) {
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet
       constructor(view: EditorView) {
-        this.decorations = previewDecorations(view, mode, assetBase, openWiki)
+        this.decorations = previewDecorations(view, mode, assetBase, openWiki, resolveEmbed, allowHtml)
       }
       update(update: ViewUpdate) {
         if (update.docChanged || update.selectionSet || update.viewportChanged) {
-          this.decorations = previewDecorations(update.view, mode, assetBase, openWiki)
+          this.decorations = previewDecorations(update.view, mode, assetBase, openWiki, resolveEmbed, allowHtml)
         }
       }
     },
@@ -612,6 +707,20 @@ function buildTheme(prefs: EditorPrefs): Extension {
       padding: '0 3px',
     },
     '.cm-md-link': { color: 'var(--sb-accent)', textDecoration: 'underline' },
+    '.cm-md-highlight': {
+      backgroundColor: 'color-mix(in oklab, #facc15 35%, transparent)',
+      borderRadius: '0.2em',
+      padding: '0 0.15em',
+    },
+    // callout 行着色（块背景 + 左侧色条；颜色跟随类型）
+    '.cm-md-callout-note': { backgroundColor: 'color-mix(in oklab, #3b82f6 7%, transparent)' },
+    '.cm-md-callout-abstract': { backgroundColor: 'color-mix(in oklab, #14b8a6 7%, transparent)' },
+    '.cm-md-callout-tip': { backgroundColor: 'color-mix(in oklab, #22c55e 7%, transparent)' },
+    '.cm-md-callout-question': { backgroundColor: 'color-mix(in oklab, #f59e0b 7%, transparent)' },
+    '.cm-md-callout-warning': { backgroundColor: 'color-mix(in oklab, #f59e0b 9%, transparent)' },
+    '.cm-md-callout-danger': { backgroundColor: 'color-mix(in oklab, #ef4444 8%, transparent)' },
+    '.cm-md-callout-example': { backgroundColor: 'color-mix(in oklab, #8b5cf6 7%, transparent)' },
+    '.cm-md-callout-quote': { backgroundColor: 'color-mix(in oklab, #94a3b8 7%, transparent)' },
     '.cm-md-quote': { color: 'var(--sb-ink-2)', borderLeft: '2px solid var(--sb-line)', paddingLeft: '8px', display: 'inline-block' },
     '.cm-md-table': { fontFamily: prefs.fontFamily, color: 'var(--sb-ink-2)' },
     '.cm-md-fence': { fontFamily: prefs.fontFamily, color: 'var(--sb-ink-2)' },
@@ -652,6 +761,8 @@ export function MarkdownEditor({
   candidatesRef.current = candidates
   const openWikiRef = useRef(onOpenWiki)
   openWikiRef.current = onOpenWiki
+  const resolveEmbed = useEmbedResolver()
+  const allowHtml = useSettingsStore((s) => s.editor.html)
   const cursorRef = useRef(onCursorLine)
   cursorRef.current = onCursorLine
   /** 这个编辑器是否被用户碰过：全新打开的笔记光标停在 0，截图不该插到开头 */
@@ -661,6 +772,31 @@ export function MarkdownEditor({
   const wikiSource = useCallback((context: CompletionContext): CompletionResult | null => {
     const found = wikiContext(context.state.doc.toString(), context.pos)
     if (!found) return null
+    // 块引用补全：`[[笔记#^` 列出那篇笔记的全部块 id
+    const hashIdx = found.query.indexOf('#^')
+    if (hashIdx >= 0) {
+      const notePart = found.query.slice(0, hashIdx).trim()
+      const idQuery = found.query.slice(hashIdx + 2).toLowerCase()
+      const body = resolveEmbed(notePart)
+      if (body === null) return null
+      const options = extractBlockIds(body)
+        .filter((entry) => !idQuery || entry.id.toLowerCase().includes(idQuery))
+        .slice(0, 8)
+        .map((entry) => ({
+          label: `^${entry.id}`,
+          detail: entry.excerpt,
+          apply: (view: EditorView, _completion: unknown, applyFrom: number) => {
+            const prefix = found.embed ? '![[' : '[['
+            const insert = `${prefix}${notePart}#^${entry.id}]]`
+            view.dispatch({
+              changes: { from: applyFrom, to: found.to, insert },
+              selection: { anchor: applyFrom + insert.length },
+            })
+          },
+        }))
+      if (!options.length) return null
+      return { from: found.from, to: found.to, options }
+    }
     const options = rankCandidates(candidatesRef.current, found.query).map((candidate) => ({
       label: candidate.path,
       detail: candidate.kind,
@@ -752,7 +888,7 @@ export function MarkdownEditor({
           cursorRef.current?.(update.state.doc.lineAt(head).number)
         }
       }),
-      extras.current.mode.of(buildPlugin(mode, assetBase, onOpenWiki)),
+      extras.current.mode.of(buildPlugin(mode, assetBase, onOpenWiki, resolveEmbed, allowHtml)),
       blockDecorationsField,
       extras.current.options.of(buildOptions(prefsRef.current)),
       extras.current.readonly.of([
@@ -772,6 +908,26 @@ export function MarkdownEditor({
     if (handleRef) {
       handleRef.current = {
         focus: () => view.focus(),
+        revealLine: (line: number) => {
+          const doc = view.state.doc
+          const target = doc.line(Math.min(Math.max(1, line), doc.lines))
+          view.dispatch({
+            selection: { anchor: target.from },
+            scrollIntoView: true,
+          })
+          view.focus()
+        },
+        revealBlock: (blockId: string) => {
+          const doc = view.state.doc
+          for (let index = 1; index <= doc.lines; index += 1) {
+            const line = doc.line(index)
+            if (blockIdOnLine(line.text) === blockId) {
+              view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true })
+              view.focus()
+              return
+            }
+          }
+        },
         insert: (text: string) => {
           const selection = view.state.selection.main
           view.dispatch({
@@ -822,7 +978,7 @@ export function MarkdownEditor({
     if (!view) return
     view.dispatch({
       effects: [
-        extras.current.mode.reconfigure(buildPlugin(mode, assetBase, onOpenWiki)),
+        extras.current.mode.reconfigure(buildPlugin(mode, assetBase, onOpenWiki, resolveEmbed, allowHtml)),
         // 只切「能不能编辑」，不要碰主题那一格
         extras.current.readonly.reconfigure([
           EditorView.editable.of(mode !== 'read'),
@@ -832,7 +988,7 @@ export function MarkdownEditor({
         setBlockConfig.of({ mode, assetBase }),
       ],
     })
-  }, [mode, assetBase, onOpenWiki])
+  }, [mode, assetBase, onOpenWiki, resolveEmbed, allowHtml])
 
   /* 开关类选项 + 字体：只重配 options 这一格 */
   useEffect(() => {

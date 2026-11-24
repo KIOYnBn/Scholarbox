@@ -437,6 +437,63 @@
   color: var(--sb-ink-2);
   font-style: italic;
 }
+/* Obsidian callout：`> [!note] 标题` 转成的色块 */
+.md-callout {
+  --callout-color: var(--sb-accent);
+  border-left: 3px solid var(--callout-color);
+  border-radius: 0.4rem;
+  background: color-mix(in oklab, var(--callout-color) 8%, transparent);
+  padding: 0.6em 0.9em;
+  margin: 0.6em 0;
+  font-style: normal;
+  color: var(--sb-ink);
+}
+.md-callout-title {
+  font-weight: 650;
+  color: var(--callout-color);
+  margin-bottom: 0.25em;
+}
+.md-callout p {
+  margin: 0.2em 0;
+}
+.md-callout-note { --callout-color: #3b82f6; }
+.md-callout-abstract { --callout-color: #14b8a6; }
+.md-callout-tip { --callout-color: #22c55e; }
+.md-callout-question { --callout-color: #f59e0b; }
+.md-callout-warning { --callout-color: #f59e0b; }
+.md-callout-danger { --callout-color: #ef4444; }
+.md-callout-example { --callout-color: #8b5cf6; }
+.md-callout-quote { --callout-color: #94a3b8; }
+/* 阅读模式里的 ==高亮== */
+.md-body mark {
+  background: color-mix(in oklab, #facc15 35%, transparent);
+  color: inherit;
+  padding: 0.05em 0.15em;
+  border-radius: 0.2em;
+}
+/* 内容嵌入：![[笔记]] 内联渲染的正文块 */
+.md-embed,
+.cm-md-embed {
+  border-left: 3px solid var(--sb-accent);
+  background: color-mix(in oklab, var(--sb-accent) 4%, transparent);
+  border-radius: 0.4rem;
+  padding: 0.5em 0.9em;
+  margin: 0.6em 0;
+}
+.cm-md-embed {
+  display: block;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.md-embed :first-child,
+.cm-md-embed :first-child {
+  margin-top: 0;
+}
+.md-embed-missing {
+  color: var(--sb-ink-3);
+  font-style: italic;
+  border-left-color: var(--sb-line);
+}
 .md-body img {
   max-width: 100%;
   border-radius: 0.4rem;

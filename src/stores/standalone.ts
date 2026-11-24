@@ -1,8 +1,10 @@
 import { create } from 'zustand'
 import { NotesRepository, type NoteMetaPatch, type StandaloneNote } from '@/lib/notes/repository'
+import { updateLinksAfterRename } from '@/lib/notes/links'
 import type { NoteStatus } from '@/lib/library/item'
 import { markViewed } from '@/lib/library/recency'
 import { useVaultStore } from './vault'
+import { useLibraryStore } from './library'
 
 interface StandaloneState {
   notes: StandaloneNote[]
@@ -70,7 +72,21 @@ export const useStandaloneNotesStore = create<StandaloneState>((set, get) => ({
     const repo = repository()
     if (!repo) return null
     try {
+      const old = get().notes.find((item) => item.file === file)
       const note = await repo.rename(file, title)
+      // 全库引用联动：别的笔记里 `[[旧名]]` / `[[notes/旧名]]` 改成新名字
+      if (old) {
+        const fs = useVaultStore.getState().fs
+        if (fs) {
+          const updated = await updateLinksAfterRename(
+            fs,
+            { kind: 'standalone', file: `notes/${old.file}`, title: old.title, body: old.body },
+            note.title,
+            `notes/${note.file.replace(/\.md$/i, '')}`,
+          ).catch(() => 0)
+          if (updated > 0) await useLibraryStore.getState().load()
+        }
+      }
       set({
         notes: sortNotes([note, ...get().notes.filter((item) => item.file !== file && item.file !== note.file)]),
       })

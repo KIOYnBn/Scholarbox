@@ -9,11 +9,17 @@ import type { StandaloneNote } from '@/lib/notes/repository'
  *  `type`（决定状态枚举、能否删除/重命名）与 `paper` / `file`
  *  （决定「打开」时是进阅读器还是进全屏编辑器）。
  *
- * 关键约定：文献笔记（`papers/<目录>/note.md`）的元数据**不复制**，
+ * 关键约定：文献笔记（`papers/<目录>/<标题>.md`，meta.json 的 noteName 记录文件名，
+ * 老库兼容 note.md）的元数据**不复制**，
  * 它的 field/tags/importance/status/progress 全部来自同目录 `meta.json`。
  * 所以 `itemFromPaper()` 永远是「现算」的 —— 改了 meta.json，
  * 文献列表和笔记库看到的是同一个值，不可能不同步。
  */
+
+/** 文献笔记的仓库内路径：papers/<目录>/<标题>.md（老库回落 note.md） */
+export function paperNoteFile(paper: PaperRecord): string {
+  return `papers/${paper.dir}/${paper.meta.noteName?.trim() || 'note.md'}`
+}
 
 export type ItemType = 'paper' | 'note'
 

@@ -32,7 +32,7 @@ export function StandaloneNoteDialog() {
           笔记 · <span className="truncate font-serif">{paper?.meta.title ?? ''}</span>
         </span>
       }
-      description="独立窗口：只写笔记，不占阅读器。改动会自动保存到这篇文献的 note.md。"
+      description="独立窗口：只写笔记，不占阅读器。改动会自动保存到这篇文献的笔记文件（以标题命名）。"
       className="max-w-4xl"
     >
       <div className="h-[70vh]">

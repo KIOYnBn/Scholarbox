@@ -14,7 +14,7 @@ export type BlockKind = 'heading' | 'quote' | 'list' | 'task' | 'code' | 'table'
 export interface InlineSpan {
   from: number
   to: number
-  kind: 'bold' | 'italic' | 'strike' | 'code' | 'link' | 'image'
+  kind: 'bold' | 'italic' | 'strike' | 'highlight' | 'code' | 'link' | 'image'
 }
 
 /** 列表项：实时预览要把标记换成圆点/序号，所以得知道原文是什么 */
@@ -193,6 +193,16 @@ const INLINE_RULES: InlineRule[] = [
   {
     kind: 'strike',
     pattern: /~~([^~]+)~~/g,
+    parse: (m) => {
+      const start = m.index + 2
+      const end = start + (m[1] ?? '').length
+      return { contentStart: start, contentEnd: end, markers: [[m.index, start], [end, end + 2]] }
+    },
+  },
+  {
+    // Obsidian 的 ==高亮==
+    kind: 'highlight',
+    pattern: /==([^=\n]+)==/g,
     parse: (m) => {
       const start = m.index + 2
       const end = start + (m[1] ?? '').length

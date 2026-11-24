@@ -1,17 +1,23 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, BookOpen, Columns2, FileText, Hash, Pin, PinOff, Search, Trash2, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowLeft, BookOpen, Columns2, FileText, Hash, Link2, ListTree, Pin, PinOff, Search, Trash2, X } from 'lucide-react'
 import { NoteSurface } from '@/components/notes/NoteSurface'
+import type { MarkdownEditorHandle } from '@/components/notes/MarkdownEditor'
 import { useOpenWikiTarget } from '@/hooks/useOpenWikiTarget'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { Modal } from '@/components/ui/Modal'
 import { useLibraryStore } from '@/stores/library'
+import { paperNoteFile } from '@/lib/library/item'
 import { useSettingsStore } from '@/stores/settings'
 import { useStandaloneNotesStore } from '@/stores/standalone'
 import { useUiStore, type NoteTarget } from '@/stores/ui'
 import { noteSurfaceStyle } from '@/lib/notes/appearance'
+import { extractOutline, type OutlineEntry } from '@/lib/notes/outline'
+import { findBacklinks, type NoteDoc } from '@/lib/notes/links'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
+
+type DrawerTab = 'outline' | 'backlinks'
 
 /**
  * 全屏笔记视图：文献笔记与独立笔记共用。
@@ -22,6 +28,7 @@ import { cn } from '@/lib/utils'
 export function FullNoteView() {
   const target = useUiStore((s) => s.noteTarget)
   const targetB = useUiStore((s) => s.noteTargetB)
+  const drawer = useUiStore((s) => s.noteDrawer)
   const closeNote = useUiStore((s) => s.closeNote)
   const markViewed = useLibraryStore((s) => s.markViewed)
   const touchViewed = useStandaloneNotesStore((s) => s.touchViewed)
@@ -43,6 +50,9 @@ export function FullNoteView() {
   }
 
   const split = Boolean(targetB)
+  const [paneText, setPaneText] = useState<{ A: string; B: string }>({ A: '', B: '' })
+  const handleA = useRef<MarkdownEditorHandle | null>(null)
+  const handleB = useRef<MarkdownEditorHandle | null>(null)
 
   return (
     <div className="flex h-full min-h-0">
@@ -53,15 +63,37 @@ export function FullNoteView() {
         )}
         style={noteSurfaceStyle(useSettingsStore.getState().editor.noteBackground)}
       >
-        <NotePane target={target} onClose={closeNote} />
+        <NotePane
+          target={target}
+          pane="A"
+          onClose={closeNote}
+          paneHandle={handleA}
+          onValueChange={(text) => setPaneText((current) => ({ ...current, A: text }))}
+        />
       </div>
       {split && targetB ? (
         <div
           className="flex min-w-0 w-1/2 flex-col bg-surface"
           style={noteSurfaceStyle(useSettingsStore.getState().editor.noteBackground)}
         >
-          <NotePane target={targetB} onClose={() => useUiStore.getState().closeNoteB()} rightPane />
+          <NotePane
+            target={targetB}
+            pane="B"
+            rightPane
+            onClose={() => useUiStore.getState().closeNoteB()}
+            paneHandle={handleB}
+            onValueChange={(text) => setPaneText((current) => ({ ...current, B: text }))}
+          />
         </div>
+      ) : null}
+      {drawer ? (
+        <NoteDrawer
+          pane={drawer.pane}
+          tab={drawer.tab}
+          target={drawer.pane === 'B' && targetB ? targetB : target}
+          text={drawer.pane === 'B' ? paneText.B : paneText.A}
+          handle={drawer.pane === 'B' ? handleB : handleA}
+        />
       ) : null}
       <NotePickerDialog />
     </div>
@@ -89,24 +121,34 @@ function useNoteRecord(target: NoteTarget | null): PaneRecord {
 }
 
 /**
- * 一栏笔记：标题栏（返回 / 重命名 / 置顶 / 删除 / 双栏开关）+ 编辑器本体。
+ * 一栏笔记：标题栏（返回 / 重命名 / 置顶 / 删除 / 双栏开关 / 大纲 / 反链）+ 编辑器本体。
  * 与右栏内嵌的是同一个 NoteSurface、同一份数据源。
  */
 function NotePane({
   target,
+  pane,
   onClose,
   rightPane = false,
+  paneHandle,
+  onValueChange,
 }: {
   target: NoteTarget
+  pane: 'A' | 'B'
   /** rightPane 的「返回」只关这一栏；左栏的「返回」关掉整个笔记视图 */
   rightPane?: boolean
   onClose: () => void
+  /** 编辑器句柄（外层持有，抽屉跳行用） */
+  paneHandle: { current: MarkdownEditorHandle | null }
+  onValueChange?: (text: string) => void
 }) {
   const openWikiTarget = useOpenWikiTarget()
   const setMainView = useUiStore((s) => s.setMainView)
   const noteTargetB = useUiStore((s) => s.noteTargetB)
   const openNotePicker = useUiStore((s) => s.openNotePicker)
   const closeNoteB = useUiStore((s) => s.closeNoteB)
+  const noteDrawer = useUiStore((s) => s.noteDrawer)
+  const toggleNoteDrawer = useUiStore((s) => s.toggleNoteDrawer)
+  const drawerActive = noteDrawer && noteDrawer.pane === pane ? noteDrawer.tab : null
 
   const saveNote = useLibraryStore((s) => s.saveNote)
   const select = useLibraryStore((s) => s.select)
@@ -129,6 +171,19 @@ function NotePane({
   const title = isPaper ? (paper?.meta.title ?? '文献笔记') : (standalone?.title ?? '未命名笔记')
   const key = target.kind === 'paper' ? `paper:${target.dir}` : `note:${target.file}`
   const initial = isPaper ? (paper?.note ?? '') : (standalone?.body ?? '')
+
+  // 初值也回传：大纲 / 反链面板不用等用户编辑一次才有数据
+  useEffect(() => {
+    onValueChange?.(initial)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial])
+
+  // 块引用跳转：[[笔记#^id]] 打开后滚动定位到那一块
+  useEffect(() => {
+    if (!target.blockId) return
+    const timer = setTimeout(() => paneHandle.current?.revealBlock(target.blockId!), 350)
+    return () => clearTimeout(timer)
+  }, [target])
   const label = target.kind === 'paper' ? 'note.md' : `notes/${target.file}`
 
   const commitRename = async () => {
@@ -246,6 +301,24 @@ function NotePane({
           </div>
         </div>
 
+        {/* 大纲 / 反链抽屉开关（Obsidian 右侧栏的那两个面板） */}
+        <IconButton
+          label="大纲"
+          size="sm"
+          active={drawerActive === 'outline'}
+          onClick={() => toggleNoteDrawer(pane, 'outline')}
+        >
+          <ListTree className="size-3.5" />
+        </IconButton>
+        <IconButton
+          label="反向链接"
+          size="sm"
+          active={drawerActive === 'backlinks'}
+          onClick={() => toggleNoteDrawer(pane, 'backlinks')}
+        >
+          <Link2 className="size-3.5" />
+        </IconButton>
+
         {/* 双栏开关：左栏是「打开右栏 / 收起右栏」，右栏显示为「换一篇」 */}
         {!rightPane ? (
           <IconButton
@@ -322,6 +395,10 @@ function NotePane({
             label={label}
             placeholder="# 新笔记\n\n从这里写起…"
             onOpenWiki={openWikiTarget}
+            handleRef={paneHandle}
+            onValueChange={(text) => {
+              onValueChange?.(text)
+            }}
             onSave={(text) => {
               if (target.kind === 'paper') return saveNote(target.dir, text)
               return saveStandalone(target.file, text).then(() => undefined)
@@ -456,6 +533,151 @@ function NotePickerDialog() {
         </div>
       </div>
     </Modal>
+  )
+}
+
+/**
+ * 笔记右侧抽屉：大纲（点击跳到对应标题行）与反向链接（谁链到了这篇笔记）。
+ * Obsidian 右侧栏的那两个核心面板。
+ */
+function NoteDrawer({
+  pane,
+  tab,
+  target,
+  text,
+  handle,
+}: {
+  pane: 'A' | 'B'
+  tab: DrawerTab
+  target: NoteTarget
+  text: string
+  handle: { current: MarkdownEditorHandle | null }
+}) {
+  const closeNoteDrawer = useUiStore((s) => s.closeNoteDrawer)
+  const toggleNoteDrawer = useUiStore((s) => s.toggleNoteDrawer)
+  const papers = useLibraryStore((s) => s.papers)
+  const notes = useStandaloneNotesStore((s) => s.notes)
+
+  const docs = useMemo<NoteDoc[]>(
+    () => [
+      ...papers.map((item) => ({
+        kind: 'paper' as const,
+        file: paperNoteFile(item),
+        title: item.meta.title,
+        dir: item.dir,
+        body: item.note ?? '',
+      })),
+      ...notes.map((item) => ({
+        kind: 'standalone' as const,
+        file: `notes/${item.file}`,
+        title: item.title,
+        body: item.body,
+      })),
+    ],
+    [papers, notes],
+  )
+
+  const targetDoc = useMemo(() => {
+    const papers = docs.filter((doc) => doc.kind === 'paper')
+    const targetDoc =
+      target.kind === 'paper'
+        ? papers.find((doc) => doc.dir === target.dir)
+        : docs.find((doc) => doc.file === `notes/${target.file}`)
+    return targetDoc ?? null
+  }, [docs, target])
+  const outline = useMemo(() => extractOutline(text), [text])
+  const backlinks = useMemo(
+    () => (targetDoc ? findBacklinks(targetDoc, docs) : []),
+    [docs, targetDoc],
+  )
+
+  const jumpToDoc = (doc: NoteDoc) => {
+    const ui = useUiStore.getState()
+    const next: NoteTarget =
+      doc.kind === 'paper' ? { kind: 'paper', dir: doc.dir! } : { kind: 'standalone', file: doc.file.slice('notes/'.length) }
+    if (pane === 'B') ui.openNoteB(next)
+    else ui.openNote(next)
+  }
+
+  return (
+    <aside className="flex w-72 shrink-0 flex-col border-l border-line bg-surface">
+      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-1.5">
+        {(
+          [
+            ['outline', ListTree, '大纲'],
+            ['backlinks', Link2, '反链'],
+          ] as const
+        ).map(([value, Icon, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => toggleNoteDrawer(pane, value)}
+            aria-pressed={tab === value}
+            className={cn(
+              'flex h-6 items-center gap-1 rounded-md px-1.5 text-[10.5px] font-medium transition',
+              tab === value ? 'bg-surface-2 text-accent' : 'text-ink-3 hover:text-ink',
+            )}
+          >
+            <Icon className="size-3" />
+            {label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={closeNoteDrawer}
+          aria-label="收起面板"
+          className="ml-auto inline-flex size-6 items-center justify-center rounded-md text-ink-3 transition hover:bg-surface-2 hover:text-ink"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+
+      <div className="sb-scroll min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        {tab === 'outline' ? (
+          outline.length === 0 ? (
+            <p className="px-1 py-3 text-[11px] text-ink-3">还没有标题</p>
+          ) : (
+            <ul className="space-y-0.5">
+              {outline.map((entry: OutlineEntry, index) => (
+                <li key={`${entry.line}-${index}`}>
+                  <button
+                    type="button"
+                    onClick={() => handle.current?.revealLine(entry.line)}
+                    title={`跳到第 ${entry.line} 行`}
+                    className="block w-full truncate rounded-md px-1.5 py-1 text-left text-[11.5px] text-ink-2 transition hover:bg-surface-2 hover:text-ink"
+                    style={{ paddingLeft: `${(entry.level - 1) * 12 + 6}px` }}
+                  >
+                    <span className="mr-1 font-mono text-[9px] text-ink-3">H{entry.level}</span>
+                    {entry.text}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : backlinks.length === 0 ? (
+          <p className="px-1 py-3 text-[11px] text-ink-3">还没有笔记链接到这里</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {backlinks.map((entry, index) => (
+              <li key={`${entry.source.file}-${entry.line}-${index}`}>
+                <button
+                  type="button"
+                  onClick={() => jumpToDoc(entry.source)}
+                  className="block w-full rounded-lg border border-line px-2 py-1.5 text-left transition hover:border-accent/40 hover:bg-surface-2/60"
+                >
+                  <span className="block truncate text-[11.5px] font-medium text-ink">
+                    {entry.source.kind === 'paper' ? '📄 ' : '📝 '}
+                    {entry.source.title}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[10px] text-ink-3">{entry.excerpt || `第 ${entry.line} 行`}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+    </aside>
   )
 }
 

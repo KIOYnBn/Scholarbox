@@ -45,6 +45,10 @@ export interface NoteSurfaceProps {
   onOpenWiki?: (path: string) => void
   /** 嵌在右栏这类窄容器里：模式按钮只留图标，避免把工具栏挤爆 */
   compact?: boolean
+  /** 把编辑器句柄透传给外层（大纲面板点击定位用） */
+  handleRef?: { current: MarkdownEditorHandle | null }
+  /** 内容变化时回传（外层的大纲 / 反链要跟着刷新） */
+  onValueChange?: (text: string) => void
 }
 
 /**
@@ -63,6 +67,8 @@ export function NoteSurface({
   candidates = [],
   onOpenWiki,
   compact = false,
+  handleRef,
+  onValueChange,
 }: NoteSurfaceProps) {
   const prefs = useSettingsStore((s) => s.editor)
   const setEditor = useSettingsStore((s) => s.setEditor)
@@ -110,10 +116,22 @@ export function NoteSurface({
         event.preventDefault()
         void persist(valueRef.current)
       }
+      // Ctrl+E：编辑（实时预览）与阅读之间切换 —— Obsidian 的习惯
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'e') {
+        const target = event.target as HTMLElement | null
+        if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return
+        event.preventDefault()
+        setMode((current) => (current === 'read' ? 'live' : 'read'))
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [persist])
+
+  // 把编辑器句柄透传出去（子 effect 先跑，这里挂上时句柄已就位）
+  useEffect(() => {
+    if (handleRef) handleRef.current = editorRef.current
+  })
 
   /* 截图插入：编辑器里按当前光标插，不抢焦点也能落 */
   const insert = useNotesStore((s) => s.insert)
@@ -234,7 +252,10 @@ export function NoteSurface({
               handleRef={editorRef}
               assetBase={paperDir ?? ''}
               onOpenWiki={onOpenWiki}
-              onChange={setValue}
+              onChange={(next) => {
+                setValue(next)
+                onValueChange?.(next)
+              }}
             />
           </div>
         </div>

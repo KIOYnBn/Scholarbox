@@ -6,7 +6,7 @@ import {
   varsFromPaper,
   type TemplateKind,
 } from '@/lib/notes/templates'
-import { join } from '@/lib/path'
+import { join, sanitizeSegment, uniqueName } from '@/lib/path'
 import { isNotFound, type VaultFS } from '@/lib/fs/types'
 import {
   folderNameFor,
@@ -17,12 +17,18 @@ import {
   type PaperMeta,
   type PaperRecord,
 } from './schema'
+import { updateLinksAfterRename } from '@/lib/notes/links'
 
 export const PAPERS_DIR = 'papers'
 export const ASSETS_DIR = 'assets'
 export const PDF_NAME = 'origin.pdf'
 export const NOTE_NAME = 'note.md'
 export const META_NAME = 'meta.json'
+
+/** 这篇文献的笔记文件名：meta 里记录的优先，老库回落 note.md */
+export function noteFileOf(meta: Pick<PaperMeta, 'noteName'> | null | undefined): string {
+  return meta?.noteName?.trim() || NOTE_NAME
+}
 export const VAULT_CONFIG = 'vault.json'
 
 export interface VaultConfig {
@@ -142,10 +148,18 @@ export class VaultRepository {
     }
 
     let note = ''
+    const noteFile = noteFileOf(meta)
     try {
-      note = await this.fs.readText(join(base, NOTE_NAME))
+      note = await this.fs.readText(join(base, noteFile))
     } catch {
-      note = ''
+      if (noteFile !== NOTE_NAME) {
+        // 迁移没跑完 / noteName 指向的文件丢了：回落到老文件名
+        try {
+          note = await this.fs.readText(join(base, NOTE_NAME))
+        } catch {
+          note = ''
+        }
+      }
     }
 
     let hasPdf = false
@@ -169,6 +183,8 @@ export class VaultRepository {
   }
 
   async list(): Promise<PaperRecord[]> {
+    // 老库迁移：把 papers/<dir>/note.md 改名为 <标题>.md（双链需要唯一的文件名）
+    await this.migrateNoteNames()
     const dirs = await this.paperDirs()
     const records = await Promise.all(
       dirs.map(async (dir) => {
@@ -210,16 +226,98 @@ export class VaultRepository {
     await this.fs.mkdir(base)
     await this.fs.mkdir(join(base, ASSETS_DIR))
     if (input.pdf) await this.fs.writeBytes(join(base, PDF_NAME), input.pdf)
-    await this.fs.writeText(join(base, META_NAME), serializeMeta(meta))
-    await this.fs.writeText(join(base, NOTE_NAME), await this.noteBodyFor(meta))
+    // 笔记文件名跟随标题（唯一文件名是双链的前提）
+    const noteName = `${sanitizeSegment(meta.title, 'note')}.md`
+    const nextMeta: PaperMeta = { ...meta, noteName }
+    await this.fs.writeText(join(base, META_NAME), serializeMeta(nextMeta))
+    await this.fs.writeText(join(base, noteName), await this.noteBodyFor(nextMeta))
 
     return this.read(dir)
   }
 
   async saveMeta(dir: string, meta: PaperMeta): Promise<PaperMeta> {
+    const current = await this.readMetaLite(dir)
+    const oldTitle = current.title
+    const oldNoteFile = noteFileOf(current)
     const next: PaperMeta = { ...meta, updatedAt: new Date().toISOString() }
+
+    // 标题改了 → 笔记文件跟着改名（文件名 = 标题，双链靠它区分文献）
+    let renamedTo: string | null = null
+    if (next.title !== oldTitle && next.title.trim()) {
+      const base = this.paperPath(dir)
+      const candidate = `${sanitizeSegment(next.title, 'note')}.md`
+      const oldPath = join(base, oldNoteFile)
+      if (candidate !== oldNoteFile && (await this.fs.exists(oldPath))) {
+        const existing = new Set(
+          (await this.fs.list(base).catch(() => []))
+            .map((entry) => entry.name)
+            .filter((name) => name !== oldNoteFile),
+        )
+        const target = uniqueName(existing, candidate)
+        await this.fs.rename(oldPath, join(base, target))
+        renamedTo = target
+        next.noteName = target
+      }
+    }
+    // 兜底：写盘后 noteName 一定有值，下次不用再迁移
+    if (!next.noteName?.trim()) next.noteName = oldNoteFile
+
     await this.fs.writeText(join(this.paperPath(dir), META_NAME), serializeMeta(next))
+
+    // 全库引用联动：[[旧标题]] / [[papers/<dir>/<旧文件>]] 改写到新名字
+    if (renamedTo) {
+      await updateLinksAfterRename(
+        this.fs,
+        { kind: 'paper', file: `papers/${dir}/${oldNoteFile}`, title: oldTitle, dir },
+        next.title,
+        `papers/${dir}/${renamedTo.replace(/\.md$/i, '')}`,
+      ).catch((err) => console.warn('[repo] 引用改写失败', err))
+    }
     return next
+  }
+
+  private async readMetaLite(dir: string): Promise<PaperMeta> {
+    const base = this.paperPath(dir)
+    try {
+      return parseMeta(await this.fs.readText(join(base, META_NAME)), { title: dir })
+    } catch {
+      return metaFromFolder(dir)
+    }
+  }
+
+  /**
+   * 老库迁移：papers/<dir>/note.md → papers/<dir>/<标题>.md，meta.json 记下 noteName。
+   * 双链要求唯一的文件名 —— 全库都叫 note.md 时按名字引用无从谈起。
+   * 每次读库跑一遍，已迁移的（noteName 非空）直接跳过。
+   */
+  private async migrateNoteNames(): Promise<void> {
+    const dirs = await this.paperDirs().catch(() => [])
+    for (const dir of dirs) {
+      try {
+        const base = this.paperPath(dir)
+        const meta = await this.readMetaLite(dir)
+        if (meta.noteName?.trim()) continue
+        const legacy = join(base, NOTE_NAME)
+        if (!(await this.fs.exists(legacy))) continue
+        const existing = new Set(
+          (await this.fs.list(base).catch(() => []))
+            .map((entry) => entry.name)
+            .filter((name) => name !== NOTE_NAME),
+        )
+        const target = uniqueName(existing, `${sanitizeSegment(meta.title, 'note')}.md`)
+        await this.fs.rename(legacy, join(base, target))
+        await this.fs.writeText(join(base, META_NAME), serializeMeta({ ...meta, noteName: target }))
+        // 老的路径写法链接跟着改（标题写法不受影响，不用动）
+        await updateLinksAfterRename(
+          this.fs,
+          { kind: 'paper', file: `papers/${dir}/${NOTE_NAME}`, title: meta.title, dir },
+          meta.title,
+          `papers/${dir}/${target.replace(/\.md$/i, '')}`,
+        ).catch(() => undefined)
+      } catch (err) {
+        console.warn('[vault] 笔记文件迁移失败', dir, err)
+      }
+    }
   }
 
   /**
@@ -261,12 +359,14 @@ export class VaultRepository {
   }
 
   async saveNote(dir: string, note: string): Promise<void> {
-    await this.fs.writeText(join(this.paperPath(dir), NOTE_NAME), note)
+    const meta = await this.readMetaLite(dir)
+    await this.fs.writeText(join(this.paperPath(dir), noteFileOf(meta)), note)
   }
 
   async readNote(dir: string): Promise<string> {
+    const meta = await this.readMetaLite(dir)
     try {
-      return await this.fs.readText(join(this.paperPath(dir), NOTE_NAME))
+      return await this.fs.readText(join(this.paperPath(dir), noteFileOf(meta)))
     } catch {
       return ''
     }

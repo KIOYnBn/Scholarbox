@@ -97,7 +97,7 @@ export function NewPaperDialog() {
         close()
       }}
       title="添加文献"
-      description="会在 papers/ 下自动建好 origin.pdf、note.md、meta.json 与 assets/"
+      description="会在 papers/ 下自动建好 origin.pdf、以标题命名的笔记 .md、meta.json 与 assets/"
       footer={
         <div className="flex items-center justify-between gap-2">
           {error ? <span className="text-[11px] text-danger">{error}</span> : <span />}
