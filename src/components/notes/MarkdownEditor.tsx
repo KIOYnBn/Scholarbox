@@ -47,6 +47,8 @@ import { renderMathHtml, scanMath } from '@/lib/notes/math'
 import { parseCalloutMarker } from '@/lib/notes/callout'
 import { applyEmbeds, resolveEmbedContent } from '@/lib/notes/embed'
 import { blockIdOnLine, extractBlockIds } from '@/lib/notes/blocks'
+import { peekMermaidSvg, renderMermaidSvg } from '@/lib/notes/mermaid'
+import { isImageFile } from '@/lib/notes/attachments'
 import { isNoteEmbedPath, isWikiHref } from '@/lib/notes/wiki'
 import { continuationEdit, wikiContext, rankCandidates, type WikiCandidate } from '@/lib/editor/completion'
 import { useEmbedResolver } from '@/hooks/useEmbedResolver'
@@ -76,6 +78,8 @@ interface MarkdownEditorProps {
   onOpenWiki?: (path: string, embed: boolean) => void
   /** 图片相对路径的基准目录（文献笔记是 `papers/<dir>`），实时预览解析用 */
   assetBase?: string
+  /** 粘贴 / 拖入图片文件时回调（保存到 attachments/ 并插正文由调用方负责） */
+  onImageFiles?: (files: File[]) => void
 }
 
 const MARK_CLASS: Record<string, string> = {
@@ -439,6 +443,38 @@ class BlockWidget extends WidgetType {
   }
 }
 
+/** 实时预览里的 mermaid 块：光标在块外时渲染成图，点进去露源码（Obsidian 行为） */
+class MermaidWidget extends WidgetType {
+  constructor(readonly source: string) {
+    super()
+  }
+  eq(other: MermaidWidget) {
+    return other.source === this.source
+  }
+  toDOM() {
+    const div = document.createElement('div')
+    div.className = 'cm-md-mermaid'
+    const cached = peekMermaidSvg(this.source)
+    if (cached) {
+      div.innerHTML = cached
+    } else {
+      void renderMermaidSvg(this.source).then((svg) => {
+        if (!div.isConnected) return
+        if (svg) div.innerHTML = svg
+        else {
+          div.classList.add('md-mermaid-error')
+          div.textContent = this.source
+          div.title = 'Mermaid 语法有误，检查图表定义'
+        }
+      })
+    }
+    return div
+  }
+  ignoreEvent() {
+    return false
+  }
+}
+
 /** 列表圆点 / 序号 */
 class ListWidget extends WidgetType {
   constructor(
@@ -597,20 +633,33 @@ function computeBlockDecorations(state: EditorState, mode: EditorMode): Decorati
     widgets.push({ from: span.from, to: span.to, widget: new MathWidget(span.tex, true) })
   }
 
-  // 代码围栏：``` 开到 ``` 整块渲染成代码块
+  // 代码围栏：``` 开到 ``` 整块渲染成代码块；mermaid 围栏渲染成图
   {
     let start: number | null = null
+    let lang = ''
     let end = 0
     const flush = () => {
       if (start === null) return
       if (!touchesActive(start, end) && !overlapsFold(start, end)) {
-        widgets.push({ from: start, to: end, widget: new BlockWidget(doc.sliceString(start, end)) })
+        if (lang === 'mermaid') {
+          // 去掉 ```mermaid 开头行与 ``` 收尾行，只留图源
+          const fence = doc.sliceString(start, end)
+          const lines = fence.split('\n')
+          const source = lines.slice(1, lines.length - 1).join('\n').replace(/\n+$/, '')
+          widgets.push({ from: start, to: end, widget: new MermaidWidget(source) })
+        } else {
+          widgets.push({ from: start, to: end, widget: new BlockWidget(doc.sliceString(start, end)) })
+        }
       }
       start = null
+      lang = ''
     }
     for (const line of scanMarkdown(text)) {
       if (line.block === 'code') {
-        if (start === null) start = line.from
+        if (start === null) {
+          start = line.from
+          lang = /^```\s*([a-zA-Z0-9_-]+)/.exec(doc.sliceString(line.from, line.to))?.[1]?.toLowerCase() ?? ''
+        }
         end = line.to
       } else {
         flush()
@@ -749,6 +798,7 @@ export function MarkdownEditor({
   onCursorLine,
   onOpenWiki,
   assetBase = '',
+  onImageFiles,
 }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -759,6 +809,24 @@ export function MarkdownEditor({
   prefsRef.current = prefs
   const candidatesRef = useRef(candidates)
   candidatesRef.current = candidates
+  const imageFilesRef = useRef(onImageFiles)
+  imageFilesRef.current = onImageFiles
+
+  /** 粘贴截图 / 拖拽图片文件：文件直接交给上层，文本粘贴不拦（CodeMirror 自己处理） */
+  const onPasteCapture = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const files = Array.from(event.clipboardData?.files ?? []).filter((f) => isImageFile(f.name) || f.type.startsWith('image/'))
+    if (files.length === 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    imageFilesRef.current?.(files)
+  }
+  const onDropCapture = (event: React.DragEvent<HTMLDivElement>) => {
+    const files = Array.from(event.dataTransfer?.files ?? []).filter((f) => isImageFile(f.name) || f.type.startsWith('image/'))
+    if (files.length === 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    imageFilesRef.current?.(files)
+  }
   const openWikiRef = useRef(onOpenWiki)
   openWikiRef.current = onOpenWiki
   const resolveEmbed = useEmbedResolver()
@@ -1000,6 +1068,8 @@ export function MarkdownEditor({
   return (
     <div
       ref={hostRef}
+      onPasteCapture={onPasteCapture}
+      onDropCapture={onDropCapture}
       className={cn('cm-host h-full min-h-0 overflow-hidden', prefs.guides && 'cm-guides')}
     />
   )

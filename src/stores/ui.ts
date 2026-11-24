@@ -40,6 +40,8 @@ interface UiState {
   noteDrawer: NoteDrawerState | null
   /** 关系图谱弹窗 */
   graphOpen: boolean
+  /** 附件管理弹窗（attachments/ 重命名，引用联动） */
+  attachmentsOpen: boolean
   /** 从书库「独立打开」时记住来处，返回时回到原页面 */
   noteReturnView: MainView
   /** 书架缩放（书脊卡片的比例，1 = 默认），文献书架与笔记书架共用 */
@@ -83,6 +85,8 @@ interface UiState {
   toggleNoteDrawer: (pane: 'A' | 'B', tab: NoteDrawerTab) => void
   closeNoteDrawer: () => void
   openGraph: () => void
+  openAttachments: () => void
+  closeAttachments: () => void
   closeGraph: () => void
   setShelfZoom: (zoom: number) => void
   /** 置顶 / 取消置顶某个书架分组（置顶的层始终排在最上面） */
@@ -123,6 +127,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   notePickerFor: null,
   noteDrawer: null,
   graphOpen: false,
+  attachmentsOpen: false,
   noteReturnView: 'home',
   shelfZoom: 1,
   pinnedShelves: [],
@@ -167,6 +172,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   closeNoteDrawer: () => set({ noteDrawer: null }),
   openGraph: () => set({ graphOpen: true }),
   closeGraph: () => set({ graphOpen: false }),
+  openAttachments: () => set({ attachmentsOpen: true }),
+  closeAttachments: () => set({ attachmentsOpen: false }),
   setShelfZoom: (zoom) =>
     set({ shelfZoom: Math.min(SHELF_ZOOM_MAX, Math.max(SHELF_ZOOM_MIN, Math.round(zoom * 100) / 100)) }),
   toggleShelfPin: (key) =>

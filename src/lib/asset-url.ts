@@ -60,8 +60,16 @@ export function clearAssetCache() {
  * （阅读视图 / 实时预览 / 老的内容编辑器）以前各写一份，容易飘。
  */
 export function resolveNoteImagePath(raw: string, paperDir: string): string {
-  const clean = raw.replace(/^\.\//, '')
-  if (clean.startsWith('papers/') || clean.startsWith('notes/')) return clean
+  // marked 生成 <img src> 时会把中文/空格 URL 编码一次；这里的输入有时是
+  // 编码过的 src、有时是原始 markdown 路径 —— 统一解码成真实文件名，
+  // 否则 convertFileSrc 会把 % 再编码一次（%E6 → %25E6）导致 404。
+  let clean = raw.replace(/^\.\//, '')
+  try {
+    clean = decodeURIComponent(clean)
+  } catch {
+    // 路径里本来就有裸 % 时解码失败，保留原样
+  }
+  if (clean.startsWith('papers/') || clean.startsWith('notes/') || clean.startsWith('attachments/')) return clean
   return paperDir ? join('papers', paperDir, clean) : join('notes', clean)
 }
 

@@ -4,6 +4,8 @@ import { renderReadingHtml } from '@/lib/notes/reading'
 import { applyCallouts } from '@/lib/notes/callout'
 import { applyEmbeds } from '@/lib/notes/embed'
 import { isWikiHref } from '@/lib/notes/wiki'
+import { applyOutlineAnchors } from '@/lib/notes/outline'
+import { applyMermaid } from '@/lib/notes/mermaid'
 import { useEmbedResolver } from '@/hooks/useEmbedResolver'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -41,6 +43,10 @@ export function ReadingView({ markdown, paperDir, onOpenWiki, fontSize, lineHeig
     applyCallouts(root)
     // 嵌入：`![[笔记]]` 占位换成内联渲染的正文（防环，深度 3）
     applyEmbeds(root, paperDir, resolveEmbed, { allowHtml })
+    // 标题锚点：阅读模式下大纲面板点击滚动定位
+    applyOutlineAnchors(root, markdown)
+    // mermaid：```mermaid 代码块渲染成图
+    applyMermaid(root)
     let cancelled = false
     const images = Array.from(root.querySelectorAll('img'))
     void Promise.all(
@@ -56,7 +62,7 @@ export function ReadingView({ markdown, paperDir, onOpenWiki, fontSize, lineHeig
     return () => {
       cancelled = true
     }
-  }, [html, paperDir, resolveEmbed, allowHtml])
+  }, [html, paperDir, resolveEmbed, allowHtml, markdown])
 
   return (
     <div

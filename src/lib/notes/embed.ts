@@ -1,5 +1,6 @@
 import { renderReadingHtml } from './reading'
 import { applyCallouts } from './callout'
+import { applyMermaid } from './mermaid'
 import { extractBlock } from './blocks'
 import { splitWikiRef, decodeEmbedB64 } from './wiki'
 import { resolveAssetUrl, resolveNoteImagePath } from '@/lib/asset-url'
@@ -103,6 +104,7 @@ function renderEmbedHtml(
   const wrap = document.createElement('div')
   wrap.innerHTML = html
   applyCallouts(wrap)
+  applyMermaid(wrap)
   applyEmbeds(wrap, paperDir, resolve, { depth, visited, allowHtml })
   return wrap.innerHTML
 }

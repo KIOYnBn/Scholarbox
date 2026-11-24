@@ -62,3 +62,15 @@ export function uniqueName(existing: Set<string>, candidate: string): string {
   while (existing.has(`${candidate}-${i}`)) i += 1
   return `${candidate}-${i}`
 }
+
+/** 从 from 目录到 to 的相对路径（都是 vault 相对路径；from 传目录，不带文件名） */
+export function relative(from: string, to: string): string {
+  const a = normalize(from).split('/').filter(Boolean)
+  const b = normalize(to).split('/').filter(Boolean)
+  let common = 0
+  while (common < a.length && common < b.length && a[common] === b[common]) common += 1
+  const up = a.length - common
+  const rest = b.slice(common)
+  if (up === 0) return rest.join('/') || '.'
+  return [...Array.from({ length: up }, () => '..'), ...rest].join('/')
+}

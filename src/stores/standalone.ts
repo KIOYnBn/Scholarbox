@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { NotesRepository, type NoteMetaPatch, type StandaloneNote } from '@/lib/notes/repository'
-import { updateLinksAfterRename } from '@/lib/notes/links'
+import { updateFileReferences, updateLinksAfterRename } from '@/lib/notes/links'
 import type { NoteStatus } from '@/lib/library/item'
 import { markViewed } from '@/lib/library/recency'
 import { useVaultStore } from './vault'
@@ -83,6 +83,12 @@ export const useStandaloneNotesStore = create<StandaloneState>((set, get) => ({
             { kind: 'standalone', file: `notes/${old.file}`, title: old.title, body: old.body },
             note.title,
             `notes/${note.file.replace(/\.md$/i, '')}`,
+          ).catch(() => 0)
+          // markdown 形式的路径引用（](notes/旧.md)）也一并改写
+          await updateFileReferences(
+            fs,
+            `notes/${old.file}`,
+            `notes/${note.file}`,
           ).catch(() => 0)
           if (updated > 0) await useLibraryStore.getState().load()
         }

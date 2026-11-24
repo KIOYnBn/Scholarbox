@@ -4,6 +4,7 @@ import {
   Code2,
   Eye,
   Heading2,
+  ImagePlus,
   Italic,
   Link2,
   List,
@@ -25,6 +26,9 @@ import { countWords } from '@/lib/markdown'
 import { wrapSelection, linkEdit, type TextEdit } from '@/lib/editor/completion'
 import type { WikiCandidate } from '@/lib/editor/completion'
 import { noteSurfaceStyle, noteWidthClass } from '@/lib/notes/appearance'
+import { ATTACHMENTS_DIR, pickImageFiles, saveNoteImage } from '@/lib/notes/attachments'
+import { ImageNameDialog } from '@/components/notes/ImageNameDialog'
+import { useVaultStore } from '@/stores/vault'
 import { cn } from '@/lib/utils'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
@@ -49,6 +53,8 @@ export interface NoteSurfaceProps {
   handleRef?: { current: MarkdownEditorHandle | null }
   /** 内容变化时回传（外层的大纲 / 反链要跟着刷新） */
   onValueChange?: (text: string) => void
+  /** 大纲跳转（模式感知：阅读滚动渲染视图 / 编辑器 revealLine）由外层注入的引用 */
+  jumpRef?: { current: ((line: number) => void) | null }
 }
 
 /**
@@ -69,6 +75,7 @@ export function NoteSurface({
   compact = false,
   handleRef,
   onValueChange,
+  jumpRef,
 }: NoteSurfaceProps) {
   const prefs = useSettingsStore((s) => s.editor)
   const setEditor = useSettingsStore((s) => s.setEditor)
@@ -79,6 +86,7 @@ export function NoteSurface({
   const valueRef = useRef(value)
   valueRef.current = value
   const editorRef = useRef<MarkdownEditorHandle | null>(null)
+  const readWrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setValue((current) => (current === savedRef.current ? initial : current))
@@ -143,6 +151,70 @@ export function NoteSurface({
     consumeInsert()
   }, [insert, captureDir, consumeInsert])
 
+  // 大纲跳转：阅读模式滚动渲染好的标题；编辑模式让编辑器滚过去
+  useEffect(() => {
+    if (!jumpRef) return
+    jumpRef.current = (line: number) => {
+      if (mode === 'read') {
+        const el = readWrapRef.current?.querySelector(`[data-outline-line="${line}"]`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          return
+        }
+      }
+      editorRef.current?.revealLine(line)
+    }
+  })
+
+  /** 图片插入统一入口：先弹命名窗，确认后再落盘 attachments/ */
+  const [pendingImages, setPendingImages] = useState<File[] | null>(null)
+  const [imgBusy, setImgBusy] = useState(false)
+  const handleImageFiles = useCallback((files: File[]) => {
+    const fs = useVaultStore.getState().fs
+    const notify = useVaultStore.getState().setNotice
+    if (!fs) {
+      notify('文献库尚未就绪，无法保存图片')
+      return
+    }
+    if (files.length === 0) return
+    setPendingImages(files)
+  }, [])
+
+  /** 命名确认：落盘并插入正文 */
+  const confirmImages = useCallback(
+    async (names: string[]) => {
+      const files = pendingImages
+      setPendingImages(null)
+      if (!files || files.length === 0) return
+      const fs = useVaultStore.getState().fs
+      const notify = useVaultStore.getState().setNotice
+      if (!fs) return
+      setImgBusy(true)
+      try {
+        for (let index = 0; index < files.length; index += 1) {
+          const file = files[index]!
+          const bytes = new Uint8Array(await file.arrayBuffer())
+          const rel = await saveNoteImage(fs, bytes, names[index] || file.name || 'image.png')
+          // 正文里写仓库根的完整相对路径：attachments/ 与笔记位置解耦，永不断链
+          const name = rel.slice(ATTACHMENTS_DIR.length + 1)
+          editorRef.current?.insertBlock(`![${name}](${rel})`)
+        }
+        notify(files.length === 1 ? '图片已存入 attachments/ 并插入笔记' : `已插入 ${files.length} 张图片（attachments/）`)
+      } catch (err) {
+        notify(`保存图片失败：${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setImgBusy(false)
+      }
+    },
+    [pendingImages],
+  )
+
+  /** 工具栏「插入图片」：选文件 → attachments/ */
+  const pickAndInsert = useCallback(async () => {
+    const files = await pickImageFiles()
+    await handleImageFiles(files)
+  }, [handleImageFiles])
+
   const applyEdit = (edit: TextEdit) => {
     const next = `${value.slice(0, edit.from)}${edit.insert}${value.slice(edit.to)}`
     setValue(next)
@@ -177,11 +249,19 @@ export function NoteSurface({
       <IconButton label="链接" size="xs" onClick={() => applyEdit(linkEdit(value, 0, 0))}>
         <Link2 className="size-3.5" />
       </IconButton>
+      <IconButton label="插入图片（存入 attachments/）" size="xs" disabled={imgBusy} onClick={() => void pickAndInsert()}>
+        {imgBusy ? <Loader2 className="size-3.5 animate-spin" /> : <ImagePlus className="size-3.5" />}
+      </IconButton>
     </>
   )
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" style={noteSurfaceStyle(prefs.noteBackground)}>
+      <ImageNameDialog
+        files={pendingImages}
+        onConfirm={(names) => void confirmImages(names)}
+        onCancel={() => setPendingImages(null)}
+      />
       {/* 注意：这一行不能加 overflow-hidden —— 字号浮层要能溢出到正文上方 */}
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line/70 px-1.5 text-ink-3">
         {mode !== 'read' ? (
@@ -233,17 +313,20 @@ export function NoteSurface({
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <div className={cn('mx-auto h-full w-full', noteWidthClass(prefs.noteWidth))}>
-          {mode === 'read' ? (
-            <ReadingView
-              markdown={value}
-              paperDir={paperDir ?? ''}
-              onOpenWiki={onOpenWiki}
-              fontSize={prefs.fontSize}
-              lineHeight={prefs.lineHeight}
-            />
-          ) : null}
+          <div ref={readWrapRef} className={mode === 'read' ? 'h-full min-h-0' : 'hidden'}>
+            {mode === 'read' ? (
+              <ReadingView
+                markdown={value}
+                paperDir={paperDir ?? ''}
+                onOpenWiki={onOpenWiki}
+                fontSize={prefs.fontSize}
+                lineHeight={prefs.lineHeight}
+              />
+            ) : null}
+          </div>
           <div className={mode === 'read' ? 'hidden' : 'h-full'}>
             <MarkdownEditor
+              onImageFiles={(files) => void handleImageFiles(files)}
               value={value}
               mode={mode}
               prefs={prefs}

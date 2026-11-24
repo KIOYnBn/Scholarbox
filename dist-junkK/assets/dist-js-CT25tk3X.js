@@ -1,0 +1,1 @@
+import{i as e}from"./core-D0tuySuH.js";async function t(t={}){return typeof t==`object`&&Object.freeze(t),await e(`plugin:dialog|open`,{options:t})}export{t as open};

@@ -1,4 +1,5 @@
 import { extractWikiLinks, splitWikiRef } from './wiki'
+import { dirname, normalize, relative } from '@/lib/path'
 import type { VaultFS } from '@/lib/fs/types'
 
 /**
@@ -116,22 +117,7 @@ export async function updateLinksAfterRename(
   newTitle: string,
   newPath: string,
 ): Promise<number> {
-  const targets: string[] = []
-  // 文献笔记现在以标题命名（meta.noteName），扫每个文献目录下的全部 .md
-  const papers = await vault.list('papers').catch(() => [])
-  for (const entry of papers) {
-    if (entry.kind !== 'dir') continue
-    const children = await vault.list(`papers/${entry.name}`).catch(() => [])
-    for (const child of children) {
-      if (child.kind === 'file' && /\.md$/i.test(child.name)) {
-        targets.push(`papers/${entry.name}/${child.name}`)
-      }
-    }
-  }
-  const notes = await vault.list('notes').catch(() => [])
-  for (const entry of notes) {
-    if (entry.kind === 'file' && /\.md$/i.test(entry.name)) targets.push(`notes/${entry.name}`)
-  }
+  const targets = await collectNoteFiles(vault)
 
   let updated = 0
   for (const path of targets) {
@@ -145,4 +131,132 @@ export async function updateLinksAfterRename(
     }
   }
   return updated
+}
+
+/** 枚举全库所有 .md 文件（notes/ + papers/<dir>/ 下） */
+export async function collectNoteFiles(vault: VaultFS): Promise<string[]> {
+  const files: string[] = []
+  const papers = await vault.list('papers').catch(() => [])
+  for (const entry of papers) {
+    if (entry.kind !== 'dir') continue
+    const children = await vault.list(`papers/${entry.name}`).catch(() => [])
+    for (const child of children) {
+      if (child.kind === 'file' && /\.md$/i.test(child.name)) {
+        files.push(`papers/${entry.name}/${child.name}`)
+      }
+    }
+  }
+  const notes = await vault.list('notes').catch(() => [])
+  for (const entry of notes) {
+    if (entry.kind === 'file' && /\.md$/i.test(entry.name)) files.push(`notes/${entry.name}`)
+  }
+  return files
+}
+
+/** 路径字符：字母数字、点横线斜杠与中文 —— 出现在匹配边界外说明是更长路径的一部分 */
+const isPathChar = (ch: string) => /[\w.\-/\u4e00-\u9fff]/.test(ch)
+
+/**
+ * 把文本里的路径引用从 from 改写成 to（大小写不敏感、带边界检查，
+ * `x.png` 不会误伤 `x.png.bak` 或 `ax.png`）。wiki 引用里的完整路径同样命中。
+ */
+export function rewritePathReferences(
+  text: string,
+  forms: Array<{ from: string; to: string }>,
+): { text: string; changed: boolean } {
+  let changed = false
+  let next = text
+  for (const { from, to } of forms) {
+    if (!from || from === to) continue
+    const haystack = next.toLowerCase()
+    const needle = from.toLowerCase()
+    let result = ''
+    let pos = 0
+    let found = false
+    for (;;) {
+      const at = haystack.indexOf(needle, pos)
+      if (at < 0) {
+        result += next.slice(pos)
+        break
+      }
+      const before = at > 0 ? next[at - 1]! : ''
+      const after = next[at + needle.length] ?? ''
+      if ((before && isPathChar(before)) || (after && isPathChar(after))) {
+        // 更长路径的一部分，跳过
+        result += next.slice(pos, at + needle.length)
+        pos = at + needle.length
+        continue
+      }
+      found = true
+      result += next.slice(pos, at) + to
+      pos = at + needle.length
+    }
+    if (found) {
+      changed = true
+      next = result
+    }
+  }
+  return { text: next, changed }
+}
+
+/**
+ * 全库改写指向 oldRel 的文件引用（图片 / md 等）。
+ * 命中三种写法：完整路径（`attachments/a.png`）、相对当前 md 的路径
+ * （`../attachments/a.png`）、同目录裸文件名（`a.png`）。
+ * wiki 引用按完整路径命中；纯名字写法由标题/文件名解析兜底，这里不动。
+ * 返回被改动的文件数。
+ */
+export async function updateFileReferences(
+  vault: VaultFS,
+  oldRel: string,
+  newRel: string,
+): Promise<number> {
+  const oldNorm = normalize(oldRel)
+  const newNorm = normalize(newRel)
+  if (oldNorm === newNorm) return 0
+  const files = await collectNoteFiles(vault)
+  const oldDir = dirname(oldNorm)
+  let updated = 0
+  for (const file of files) {
+    const text = await vault.readText(file).catch(() => null)
+    if (!text) continue
+    const dir = dirname(file)
+    const forms: Array<{ from: string; to: string }> = [{ from: oldNorm, to: newNorm }]
+    // 相对路径（带 ../）对所有笔记生效
+    const relOld = relative(dir, oldNorm)
+    const relNew = relative(dir, newNorm)
+    if (relOld.startsWith('../')) forms.push({ from: relOld, to: relNew })
+    // 裸文件名只在与目标同目录的笔记里改写，避免误伤别处的同名文件
+    if (dir === oldDir && oldDir !== '') {
+      forms.push({ from: basenameOf(oldNorm), to: basenameOf(newNorm) })
+    }
+    const { text: next, changed } = rewritePathReferences(text, forms)
+    if (changed) {
+      await vault.writeText(file, next)
+      updated += 1
+    }
+  }
+  return updated
+}
+
+function basenameOf(rel: string): string {
+  const idx = rel.lastIndexOf('/')
+  return idx === -1 ? rel : rel.slice(idx + 1)
+}
+
+/**
+ * 重命名库内文件（图片、md 等任意文件）并同步全库引用。
+ * 目标已存在时抛错；返回被更新引用的文件数。
+ */
+export async function renameVaultFileWithLinks(
+  vault: VaultFS,
+  oldRel: string,
+  newRel: string,
+): Promise<number> {
+  const oldNorm = normalize(oldRel)
+  const newNorm = normalize(newRel)
+  if (oldNorm === newNorm) return 0
+  if (await vault.exists(newNorm)) throw new Error(`目标文件已存在：${newNorm}`)
+  await vault.rename(oldNorm, newNorm)
+  return updateFileReferences(vault, oldNorm, newNorm)
 }

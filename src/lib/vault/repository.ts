@@ -17,7 +17,7 @@ import {
   type PaperMeta,
   type PaperRecord,
 } from './schema'
-import { updateLinksAfterRename } from '@/lib/notes/links'
+import { updateFileReferences, updateLinksAfterRename } from '@/lib/notes/links'
 
 export const PAPERS_DIR = 'papers'
 export const ASSETS_DIR = 'assets'
@@ -272,6 +272,12 @@ export class VaultRepository {
         next.title,
         `papers/${dir}/${renamedTo.replace(/\.md$/i, '')}`,
       ).catch((err) => console.warn('[repo] 引用改写失败', err))
+      // markdown 形式的路径引用（](papers/<dir>/旧文件.md)）也一并改写
+      await updateFileReferences(
+        this.fs,
+        join(this.paperPath(dir), oldNoteFile),
+        join(this.paperPath(dir), renamedTo),
+      ).catch((err) => console.warn('[repo] 路径引用改写失败', err))
     }
     return next
   }
@@ -313,6 +319,11 @@ export class VaultRepository {
           { kind: 'paper', file: `papers/${dir}/${NOTE_NAME}`, title: meta.title, dir },
           meta.title,
           `papers/${dir}/${target.replace(/\.md$/i, '')}`,
+        ).catch(() => undefined)
+        await updateFileReferences(
+          this.fs,
+          join(base, NOTE_NAME),
+          join(base, target),
         ).catch(() => undefined)
       } catch (err) {
         console.warn('[vault] 笔记文件迁移失败', dir, err)

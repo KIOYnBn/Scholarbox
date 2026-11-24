@@ -471,6 +471,31 @@
   padding: 0.05em 0.15em;
   border-radius: 0.2em;
 }
+/* Mermaid 图表：```mermaid 块渲染出的 SVG */
+.md-mermaid,
+.cm-md-mermaid {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  margin: 0.6em 0;
+  padding: 0.5em;
+  background: color-mix(in oklab, var(--sb-surface-2) 45%, transparent);
+  border-radius: 0.5rem;
+}
+.md-mermaid svg,
+.cm-md-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.md-mermaid-error {
+  font-family: var(--sb-code-font, ui-monospace, monospace);
+  font-size: 0.85em;
+  color: var(--sb-ink-2);
+  white-space: pre-wrap;
+  text-align: left;
+  border-left: 3px solid #f59e0b;
+}
+/* 内容嵌入：![[笔记]] 内联渲染的正文块 */
 /* 内容嵌入：![[笔记]] 内联渲染的正文块 */
 .md-embed,
 .cm-md-embed {

@@ -3,6 +3,7 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   FileUp,
+  FolderCog,
   Grid2x2,
   Layers,
   LayoutList,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react'
 import { importMarkdownFiles, pickMarkdownFiles } from '@/lib/notes/import'
 import { GraphDialog } from '@/components/notes/GraphView'
+import { AttachmentsDialog } from '@/components/notes/AttachmentsDialog'
 import { useVaultStore } from '@/stores/vault'
 import { useLibraryStore } from '@/stores/library'
 import { useStandaloneNotesStore } from '@/stores/standalone'
@@ -427,6 +429,7 @@ export function NotesLibrary({
       <NoteMetaDialog file={metaFile} onClose={() => setMetaFile(null)} />
       <MetaDialog />
       <GraphDialog />
+      <AttachmentsDialog />
     </>
   )
 
@@ -464,6 +467,15 @@ export function NotesLibrary({
                 className="inline-flex size-7 items-center justify-center rounded-md border border-line text-ink-2 transition hover:border-accent/50 hover:text-accent"
               >
                 <Network className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => useUiStore.getState().openAttachments()}
+                title="附件管理"
+                aria-label="附件管理"
+                className="inline-flex size-7 items-center justify-center rounded-md border border-line text-ink-2 transition hover:border-accent/50 hover:text-accent"
+              >
+                <FolderCog className="size-4" />
               </button>
               <button
                 type="button"
@@ -628,6 +640,15 @@ export function NotesLibrary({
           >
             <Network className="size-3.5" />
           </button>
+          <button
+            type="button"
+            onClick={() => useUiStore.getState().openAttachments()}
+            title="附件管理"
+            aria-label="附件管理"
+            className="sb-btn sb-btn-primary h-7 w-7 shrink-0 justify-center text-[11.5px]"
+          >
+            <FolderCog className="size-3.5" />
+          </button>
         </div>
 
         {statusTabsNode}
@@ -688,6 +709,7 @@ function SortButton({
         ))}
       </select>
       <GraphDialog />
+      <AttachmentsDialog />
     </div>
   )
 }

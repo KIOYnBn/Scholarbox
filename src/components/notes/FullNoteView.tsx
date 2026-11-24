@@ -53,6 +53,9 @@ export function FullNoteView() {
   const [paneText, setPaneText] = useState<{ A: string; B: string }>({ A: '', B: '' })
   const handleA = useRef<MarkdownEditorHandle | null>(null)
   const handleB = useRef<MarkdownEditorHandle | null>(null)
+  // 大纲跳转（模式感知）：阅读模式滚动渲染视图，编辑模式 revealLine
+  const jumpA = useRef<((line: number) => void) | null>(null)
+  const jumpB = useRef<((line: number) => void) | null>(null)
 
   return (
     <div className="flex h-full min-h-0">
@@ -68,6 +71,7 @@ export function FullNoteView() {
           pane="A"
           onClose={closeNote}
           paneHandle={handleA}
+          jumpRef={jumpA}
           onValueChange={(text) => setPaneText((current) => ({ ...current, A: text }))}
         />
       </div>
@@ -82,6 +86,7 @@ export function FullNoteView() {
             rightPane
             onClose={() => useUiStore.getState().closeNoteB()}
             paneHandle={handleB}
+            jumpRef={jumpB}
             onValueChange={(text) => setPaneText((current) => ({ ...current, B: text }))}
           />
         </div>
@@ -92,7 +97,7 @@ export function FullNoteView() {
           tab={drawer.tab}
           target={drawer.pane === 'B' && targetB ? targetB : target}
           text={drawer.pane === 'B' ? paneText.B : paneText.A}
-          handle={drawer.pane === 'B' ? handleB : handleA}
+          jump={drawer.pane === 'B' ? jumpB : jumpA}
         />
       ) : null}
       <NotePickerDialog />
@@ -130,6 +135,7 @@ function NotePane({
   onClose,
   rightPane = false,
   paneHandle,
+  jumpRef,
   onValueChange,
 }: {
   target: NoteTarget
@@ -139,6 +145,8 @@ function NotePane({
   onClose: () => void
   /** 编辑器句柄（外层持有，抽屉跳行用） */
   paneHandle: { current: MarkdownEditorHandle | null }
+  /** 大纲跳转（模式感知） */
+  jumpRef: { current: ((line: number) => void) | null }
   onValueChange?: (text: string) => void
 }) {
   const openWikiTarget = useOpenWikiTarget()
@@ -388,6 +396,7 @@ function NotePane({
           <p className="py-10 text-center text-[12px] text-ink-3">这篇笔记已经被删除了</p>
         ) : (
           <NoteSurface
+            jumpRef={jumpRef}
             noteKey={key}
             initial={initial}
             paperDir={target.kind === 'paper' ? target.dir : ''}
@@ -545,13 +554,14 @@ function NoteDrawer({
   tab,
   target,
   text,
-  handle,
+  jump,
 }: {
   pane: 'A' | 'B'
   tab: DrawerTab
   target: NoteTarget
   text: string
-  handle: { current: MarkdownEditorHandle | null }
+  /** 模式感知的跳转（阅读模式滚动渲染视图） */
+  jump: { current: ((line: number) => void) | null }
 }) {
   const closeNoteDrawer = useUiStore((s) => s.closeNoteDrawer)
   const toggleNoteDrawer = useUiStore((s) => s.toggleNoteDrawer)
@@ -642,7 +652,7 @@ function NoteDrawer({
                 <li key={`${entry.line}-${index}`}>
                   <button
                     type="button"
-                    onClick={() => handle.current?.revealLine(entry.line)}
+                    onClick={() => jump.current?.(entry.line)}
                     title={`跳到第 ${entry.line} 行`}
                     className="block w-full truncate rounded-md px-1.5 py-1 text-left text-[11.5px] text-ink-2 transition hover:bg-surface-2 hover:text-ink"
                     style={{ paddingLeft: `${(entry.level - 1) * 12 + 6}px` }}

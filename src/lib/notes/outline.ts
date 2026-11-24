@@ -33,3 +33,21 @@ export function extractOutline(markdown: string): OutlineEntry[] {
 
   return out
 }
+
+/**
+ * 给渲染好的阅读视图标题打上源行号锚点（data-outline-line），
+ * 阅读模式下大纲面板点击就能滚动定位。
+ *
+ * 按出现顺序与 extractOutline 的条目一一对应；嵌入块（.md-embed）里的
+ * 标题来自别的笔记，跳过不打。
+ */
+export function applyOutlineAnchors(root: HTMLElement, markdown: string): void {
+  const entries = extractOutline(markdown)
+  const headings = Array.from(root.querySelectorAll('h1, h2, h3, h4, h5, h6')).filter(
+    (el): el is HTMLElement => el instanceof HTMLElement && !el.closest('.md-embed'),
+  )
+  const count = Math.min(headings.length, entries.length)
+  for (let index = 0; index < count; index += 1) {
+    headings[index]!.dataset.outlineLine = String(entries[index]!.line)
+  }
+}
